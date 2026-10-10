@@ -44,7 +44,7 @@
       assumed: [
         'fuseUsage', 'fuseCreation', 'creationPerComplexity', 'primeComplexity',
         'oppositionComplexity', 'nestingPenalty', 'complexityMin', 'complexityMax',
-        'nestPenalty', 'usagePerDoubling', 'areaExponent',
+        'nestPenalty', 'usagePerDoubling',
       ],
     },
 
@@ -167,7 +167,7 @@
         ],
       },
       {
-        id: 'sunlight', name: 'Sonnenlicht', kind: 'rate', unit: 'jqm/s', areaScaling: true, assumed: true,
+        id: 'sunlight', name: 'Sonnenlicht', kind: 'rate', unit: 'jqm/s', areaScaling: true,
         levels: [
           { id: 'night', name: 'Nacht', value: 0 },
           { id: 'overcast', name: 'bedeckt', value: 5 },
@@ -176,7 +176,7 @@
         ],
       },
       {
-        id: 'thermal', name: 'Temperaturgefälle', kind: 'rate', unit: 'jqm/s', areaScaling: true, assumed: true,
+        id: 'thermal', name: 'Temperaturgefälle', kind: 'rate', unit: 'jqm/s', areaScaling: true,
         levels: [
           { id: 'k10', name: '10 K Unterschied', value: 2 },
           { id: 'k50', name: '50 K Unterschied', value: 12 },
@@ -184,16 +184,28 @@
         ],
       },
       {
-        id: 'motion', name: 'Bewegung', kind: 'rate', unit: 'jqm/s', assumed: true,
+        id: 'wind', name: 'Wind', kind: 'rate', unit: 'jqm/s', areaScaling: true, assumed: true,
+        note: 'Nur Sturm = 30 jqm/s stammt aus dem ersten Entwurf; Brise und Wind sind geschätzt.',
         levels: [
-          { id: 'walk', name: 'Gehen', value: 2 },
-          { id: 'run', name: 'Laufen', value: 8 },
-          { id: 'storm', name: 'Sturm oder Schwerthieb', value: 30 },
+          { id: 'breeze', name: 'Brise', value: 5 },
+          { id: 'wind', name: 'Wind', value: 15 },
+          { id: 'storm', name: 'Sturm', value: 30 },
         ],
       },
       {
-        id: 'crystal', name: 'Energiekristall', kind: 'store', unit: 'jqm', assumed: true,
-        note: 'Standard 5 × 2 × 2 cm. Abgabegrenze und Wiederaufladen sind noch nicht definiert.',
+        id: 'motion', name: 'Bewegung', kind: 'rate', unit: 'jqm/s',
+        levels: [
+          { id: 'walk', name: 'Gehen', value: 2 },
+          { id: 'run', name: 'Laufen', value: 8 },
+          { id: 'strike', name: 'Schwerthieb', value: 30 },
+        ],
+      },
+      {
+        // Wird am Körper getragen; der Körper leitet zum Siegel (kein Generator-Bauteil).
+        id: 'crystal', name: 'Energiekristall', kind: 'store', placement: 'carried', unit: 'jqm', consumes: 'Kristall',
+        rechargeable: false,
+        note: 'Entsteht aus Energie und löst sich bei Verbrauch auf. Gibt seine gesamte Energie in unter einer Nanosekunde ab. Ohne Präparation nahezu unzerstörbar.',
+        hazard: 'Ein präparierter Kristall explodiert beim Brechen. 300.000 jqm könnten einen Krater von 150 km erzeugen.',
         levels: [{ id: 'standard', name: 'Standard (5 × 2 × 2 cm)', value: 300000 }],
       },
     ],

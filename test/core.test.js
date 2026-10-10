@@ -166,13 +166,33 @@ test('Generatorquellen: Dauerleistung, Vorrat, Flächenskalierung', () => {
   close(body.generators.rate, 5);
   const blood = analyze(d, seal([gen('blood', 'ml', 3)]));
   close(blood.generators.stores[0].total, 3000);
-  const crystal = analyze(d, seal([gen('crystal', 'standard', 1)]));
-  close(crystal.generators.stores[0].total, 300000);
   const sunSmall = analyze(d, seal([gen('sunlight', 'clear')], { size: 1 }));
   const sunBig = analyze(d, seal([gen('sunlight', 'clear')], { size: 2 }));
   close(sunBig.generators.rate / sunSmall.generators.rate, 4);
-  // Bewegung ist nicht flächenabhängig
+  for (const [src, lvl] of [['wind', 'storm'], ['thermal', 'k50']]) {
+    const a = analyze(d, seal([gen(src, lvl)], { size: 1 })).generators.rate;
+    const b = analyze(d, seal([gen(src, lvl)], { size: 2 })).generators.rate;
+    close(b / a, 4);
+  }
+  // Bewegung (Schritte) ist nicht flächenabhängig
   close(analyze(d, seal([gen('motion', 'run')], { size: 2 })).generators.rate, 8);
+});
+
+test('Kristall: wird am Körper getragen, zählt nicht als Siegelteil, ist nicht aufladbar', () => {
+  const d = fresh();
+  const crystal = { kind: 'carried', source: 'crystal', level: 'standard', amount: 1 };
+  const r = analyze(d, seal([e('feuer'), crystal]));
+  assert.equal(r.typ, 1);
+  assert.equal(r.carried.length, 1);
+  close(r.carried[0].total, 300000);
+  assert.equal(r.carried[0].rechargeable, false);
+  assert.equal(r.complexity.total, analyze(d, seal([e('feuer')])).complexity.total);
+  assert.ok(r.warnings.some((w) => w.level === 'warn' && /150 km/.test(w.text)));
+  close(analyze(d, seal([crystal, { ...crystal, amount: 2 }])).carried.reduce((a, c) => a + c.total, 0), 900000);
+  // im Generator ist ein Kristall nicht erlaubt
+  const bad = analyze(d, seal([{ kind: 'generator', ref: 'generator', source: 'crystal', level: 'standard' }]));
+  assert.equal(bad.generators.stores.length, 0);
+  assert.ok(bad.warnings.some((w) => /Körper getragen/.test(w.text)));
 });
 
 test('Analyse ist deterministisch und ändert die Daten nicht', () => {

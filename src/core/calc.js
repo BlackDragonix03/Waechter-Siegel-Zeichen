@@ -9,6 +9,7 @@
  *     { kind: 'element',   id: 'eis', params: { wasser: { speed: 2 } } },
  *     { kind: 'battery',   ref: 'battery_small' },
  *     { kind: 'generator', ref: 'generator', source: 'body', level: 'regen', amount: 1 },
+ *     { kind: 'carried',   source: 'crystal', level: 'standard', amount: 1 },  // am Körper getragen
  *     { kind: 'seal',      spec: { ... } }          // Siegel im Siegel
  *   ]
  * }
@@ -103,6 +104,7 @@
     const parts = [];
     const primes = {};
     const generators = { rate: 0, stores: [] };
+    const carried = [];
     let partsComplexity = 0;
     let effectsSum = 0;
     let nestDepth = 0;
@@ -143,6 +145,7 @@
           const src = data.sources.find((x) => x.id === part.source);
           const lvl = src && src.levels.find((l) => l.id === part.level);
           if (!src || !lvl) warn('warn', 'Generator ohne gültige Quelle.');
+          else if (src.placement === 'carried') warn('warn', `${src.name} wird am Körper getragen und gehört nicht in einen Generator.`);
           else if (src.kind === 'rate') {
             const rate = lvl.value * (src.areaScaling ? Math.pow(size, s.areaExponent) : 1);
             generators.rate += rate;
@@ -156,6 +159,16 @@
           }
         }
         parts.push(out);
+      } else if (part.kind === 'carried') {
+        // Am Körper getragener Vorrat (Kristall): der Körper leitet zum Siegel.
+        // Kein Teil des Siegels: zählt nicht für Typ und Komplexität.
+        const src = data.sources.find((x) => x.id === part.source);
+        const lvl = src && src.levels.find((l) => l.id === part.level);
+        if (!src || !lvl) { warn('warn', 'Getragene Quelle ungültig.'); return; }
+        const amount = hasValue(part.amount) ? Number(part.amount) : 1;
+        carried.push({ name: src.name, level: lvl.name, amount, total: lvl.value * amount, unit: src.consumes || '×', rechargeable: !!src.rechargeable });
+        if (src.hazard) note(`hz:${src.id}`, 'warn', `${src.name}: ${src.hazard}`);
+        if (carrier === 'object') note('carry-object', 'info', 'Getragene Kristalle speisen über den Körper. Für Siegel auf Gegenständen ist das noch nicht definiert.');
       } else if (part.kind === 'seal') {
         const sub = analyze(data, part.spec || {}, depth + 1);
         const complexity = sub.complexity.total * s.nestingPenalty;
@@ -215,6 +228,7 @@
       creation,
       usage: { effects: effectsSum, total: usage, efficiency },
       generators,
+      carried,
       nestDepth,
       warnings,
     };

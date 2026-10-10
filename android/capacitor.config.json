@@ -1,0 +1,6 @@
+{
+  "appId": "de.waechter.siegelwerkstatt",
+  "appName": "Wächter-Siegelwerkstatt",
+  "webDir": "../dist/web",
+  "android": { "allowMixedContent": false }
+}

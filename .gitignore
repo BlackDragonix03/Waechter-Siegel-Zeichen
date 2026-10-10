@@ -1,0 +1,6 @@
+node_modules/
+dist/
+desktop/web/
+desktop/dist/
+android-app/
+*.log

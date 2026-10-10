@@ -1,0 +1,26 @@
+{
+  "name": "waechter-siegelwerkstatt",
+  "productName": "Waechter-Siegelwerkstatt",
+  "version": "0.1.0",
+  "description": "Siegel und Schrift der Wächter",
+  "author": "Wächter-Siegelwerkstatt",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "web": "node ../scripts/build-web.js && node copy-web.js",
+    "start": "npm run web && electron .",
+    "pack:win": "npm run web && electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "de.waechter.siegelwerkstatt",
+    "productName": "Waechter-Siegelwerkstatt",
+    "files": ["main.js", "web/**/*", "package.json"],
+    "directories": { "output": "dist" },
+    "win": { "icon": "icon.png", "target": [{ "target": "portable", "arch": ["x64"] }] },
+    "portable": { "artifactName": "Waechter-Siegelwerkstatt-${version}.exe" }
+  }
+}

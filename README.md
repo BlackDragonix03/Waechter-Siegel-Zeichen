@@ -11,6 +11,21 @@ Datei exportieren (Backup, oder zum Ablegen im Repo) und wieder importieren.
 
 Tests: `npm test` (Node 20 oder neuer, keine Abhängigkeiten).
 
+## Pakete: Windows-Exe und Android-APK
+
+GitHub baut beide Pakete automatisch (`.github/workflows/build.yml`, Reiter **Actions**,
+Lauf öffnen, unten **Artefakte**). Auch von Hand startbar über **Run workflow**.
+
+- **Windows:** `Waechter-Siegelwerkstatt-0.1.0.exe`, eine einzelne Datei ohne Installation
+  (Electron, `desktop/`). Unsigniert: Windows zeigt beim ersten Start eventuell eine
+  SmartScreen-Warnung („Weitere Informationen“, „Trotzdem ausführen“).
+- **Android:** `Waechter-Siegelwerkstatt-debug.apk` (Capacitor, `android/`). Mit einem
+  Debug-Schlüssel signiert, per Seitenladen installierbar (Installation aus unbekannten
+  Quellen erlauben). Fürs Veröffentlichen im Play Store braucht es einen eigenen Schlüssel.
+  Bilder werden dort über den Teilen-Dialog gespeichert.
+
+Lokal: `cd desktop && npm install && npm start` startet die Desktop-App zum Testen.
+
 ## Regeln der Welt, wie sie im Tool stecken
 
 - **Urelemente:** Erde, Feuer, Wasser, Luft, Licht, Dunkel, Mystic, Natura.

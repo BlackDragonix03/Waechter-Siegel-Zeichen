@@ -119,7 +119,30 @@
 
   /* ---------- Siegelbild ---------- */
 
-  function download(name, blob) {
+  function blobToBase64(blob) {
+    return new Promise((ok, fail) => {
+      const r = new FileReader();
+      r.onload = () => ok(String(r.result).split(',')[1]);
+      r.onerror = fail;
+      r.readAsDataURL(blob);
+    });
+  }
+
+  // Speichern: im Browser und in der Desktop-App als Download, in der Android-App über den Teilen-Dialog
+  // (dort ignoriert die WebView das download-Attribut).
+  async function download(name, blob) {
+    const cap = window.Capacitor;
+    const native = cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform() &&
+      cap.Plugins && cap.Plugins.Filesystem && cap.Plugins.Share;
+    if (native) {
+      try {
+        const saved = await cap.Plugins.Filesystem.writeFile({ path: name, data: await blobToBase64(blob), directory: 'CACHE' });
+        await cap.Plugins.Share.share({ title: name, url: saved.uri, dialogTitle: 'Speichern oder teilen' });
+      } catch (e) {
+        if (!/cancel/i.test(String(e && e.message))) alert('Speichern fehlgeschlagen: ' + (e && e.message ? e.message : e));
+      }
+      return;
+    }
     const a = h('a', { href: URL.createObjectURL(blob), download: name });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);

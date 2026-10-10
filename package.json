@@ -1,0 +1,9 @@
+{
+  "name": "waechter-siegel-zeichen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Schrift- und Siegel-Werkzeug für die Wächter",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}

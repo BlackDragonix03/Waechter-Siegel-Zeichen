@@ -9,7 +9,7 @@
   /* ---------- Zustand ---------- */
 
   const clone = (o) => JSON.parse(JSON.stringify(o));
-  const defaultSpec = () => ({ size: 1, carrier: 'body', density: 'normal', parts: [] });
+  const defaultSpec = () => ({ size: 1, carrier: 'body', density: 'normal', label: '', theme: 'color', placement: 'auto', parts: [] });
 
   function load(key, fallback) {
     try {
@@ -114,7 +114,48 @@
     const res = W.Calc.analyze(data, spec);
     return h('div', { class: 'cols' },
       h('div', { class: 'col' }, controlsCard(), ...spec.parts.map((p, i) => partCard(p, i, idx)), addCard()),
-      h('div', { class: 'col' }, resultCard(res)));
+      h('div', { class: 'col' }, sealCard(), resultCard(res)));
+  }
+
+  /* ---------- Siegelbild ---------- */
+
+  function download(name, blob) {
+    const a = h('a', { href: URL.createObjectURL(blob), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  function exportPng(svg, name) {
+    const img = new Image();
+    img.onload = () => {
+      const px = 2400;
+      const c = document.createElement('canvas');
+      c.width = px; c.height = px;
+      c.getContext('2d').drawImage(img, 0, 0, px, px);
+      c.toBlob((b) => { if (b) download(name, b); else alert('PNG-Export fehlgeschlagen.'); }, 'image/png');
+    };
+    img.onerror = () => alert('PNG-Export fehlgeschlagen.');
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  function sealCard() {
+    const themes = W.Seal.THEMES;
+    const r = W.Seal.build(data, spec, { theme: spec.theme, label: spec.label, placement: spec.placement || 'auto' });
+    const box = h('div', { class: 'sealbox' });
+    if (r.empty) box.append(h('p', { class: 'hint' }, 'Füge links Elemente oder Bauteile hinzu, dann entsteht hier das Siegel.'));
+    else box.innerHTML = r.svg;
+    return h('div', { class: 'card' },
+      h('h3', {}, 'Siegelbild'),
+      box,
+      h('div', { class: 'row' },
+        field('Stil ', select(Object.keys(themes).map((k) => [k, themes[k].label]), spec.theme, (v) => { spec.theme = v; commit(); })),
+        field('Zeichen ', select([['auto', 'je Teil (nach Definition)'], ['inner', 'alle im Siegel'], ['outer', 'alle am Rand']], spec.placement || 'auto', (v) => { spec.placement = v; commit(); })),
+        field('Inschrift ', textInput(spec.label || '', (v) => { spec.label = v; commit(); }, { placeholder: 'Name oder Worte' }))),
+      r.empty ? null : h('div', { class: 'row' },
+        btn('SVG speichern', () => download(`siegel-${r.meta.id}.svg`, new Blob([r.svg], { type: 'image/svg+xml' })), 'primary'),
+        btn('PNG speichern', () => exportPng(r.svg, `siegel-${r.meta.id}.png`), 'primary'),
+        h('span', { class: 'muted' }, `Siegel-ID ${r.meta.id}`)),
+      h('p', { class: 'hint' }, 'Gleiche Anforderungen ergeben immer dasselbe Bild. Größe und Träger ändern das Bild nicht, nur die Kosten.'));
   }
 
   function controlsCard() {
@@ -360,7 +401,8 @@
     d.append(h('div', { class: 'row' },
       field('Name ', textInput(el.name, (v) => { el.name = v; commit(); })),
       el.kind === 'prime' ? field('Farbe ', h('input', { type: 'color', value: el.color || '#888888', onchange: (e) => { el.color = e.target.value; commit(); } })) : null,
-      el.kind === 'prime' ? field('Komplexität ', numInput(el.complexity, (v) => { el.complexity = v; commit(); }, { placeholder: 'Standard' })) : null));
+      el.kind === 'prime' ? field('Komplexität ', numInput(el.complexity, (v) => { el.complexity = v; commit(); }, { placeholder: 'Standard' })) : null,
+      field('Platz im Siegel ', select([['outer', 'außen (am Rand)'], ['inner', 'innen (um den Kern)']], el.place || 'outer', (v) => { el.place = v; commit(); }))));
     if (el.kind === 'prime') d.append(...costEditor(el));
     else {
       const names = el.recipe.ingredients.map((i) => (data.elements.find((e) => e.id === i) || { name: i }).name);
@@ -479,6 +521,7 @@
           h('span', { class: 'chip' }, c.kind === 'battery' ? 'Batterie' : 'Generator'),
           field('Komplexität ', numInput(c.complexity, (v) => edit(c, 'complexity', v))),
           c.kind === 'battery' ? field('Kapazität (jqm) ', numInput(c.capacity, (v) => edit(c, 'capacity', v), { placeholder: 'offen' })) : null,
+          field('Platz ', select([['inner', 'innen'], ['outer', 'außen']], c.place || 'inner', (v) => { c.place = v; commit(); })),
           assumedChip(c.assumed))),
         h('div', { class: 'row' },
           btn('+ Batterie', () => { data.components.push({ id: 'battery_' + Date.now().toString(36), name: 'Neue Batterie', kind: 'battery', complexity: 2, capacity: null, assumed: true }); commit(); }),
@@ -558,11 +601,6 @@
 
   /* ---------- Daten ---------- */
 
-  function download(name, text) {
-    const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: name });
-    document.body.append(a); a.click(); a.remove();
-  }
-
   function renderData() {
     const problems = M.validate(data);
     const file = h('input', { type: 'file', accept: 'application/json,.json', onchange: (e) => {
@@ -580,7 +618,7 @@
       h('div', { class: 'card' }, h('h3', {}, 'Speichern und Laden'),
         h('p', { class: 'hint' }, 'Alles wird automatisch im Browser gespeichert. Für ein Backup oder zum Ablegen im Repo exportierst du die Daten als Datei.'),
         h('div', { class: 'row' },
-          btn('Daten exportieren', () => download('waechter-daten.json', JSON.stringify(data, null, 2)), 'primary'),
+          btn('Daten exportieren', () => download('waechter-daten.json', new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })), 'primary'),
           field('Importieren ', file),
           btn('Auf Standard zurücksetzen', () => {
             if (confirm('Alle Änderungen verwerfen und die Startdaten laden?')) { data = clone(W.defaultData); spec = defaultSpec(); commit(); }

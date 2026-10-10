@@ -84,3 +84,6 @@ ul.clean { margin: 4px 0; padding-left: 18px; }
 .msg.info { border-color: var(--info); color: var(--muted); }
 .ok { color: var(--ok); }
 .muted { color: var(--muted); }
+
+.sealbox { background: #0003; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.sealbox svg { display: block; width: 100%; height: auto; }

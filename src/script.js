@@ -1,15 +1,17 @@
 /*
- * Die Schrift der Wächter.
+ * Schaftschrift der Wächter (Entwurf, kombinierbar).
  *
- * Jeder Buchstabe bekommt ein festes Glyph, erzeugt aus dem Schriftschlüssel
- * (Lore.alphabetKey). Gleicher Schlüssel -> immer dasselbe Alphabet.
+ * Prinzip: Jeder Buchstabe sitzt auf demselben senkrechten Schaft (x = 0.3).
+ * Zweige links und rechts machen ihn unverwechselbar. Übereinander gesetzt
+ * verbinden sich die Schäfte zu einer durchgehenden Linie: ein Wort wird EIN
+ * Symbol (eine Art Binderune) und passt in einen Siegelkreis.
  *
- * Regeln der Schrift (damit sie wie ein System wirkt, nicht wie Zufall):
- *  - Glyphen leben auf einem 3x5-Knotenraster (Breite 0.6, Höhe 1).
- *  - Fast alle haben eine tragende Linie (Schaft), davon zweigen Striche ab.
- *  - Vokale tragen einen RING an einem Strichende.
- *  - Umlaute = Grundbuchstabe + zwei Punkte darüber.
- *  - Ein Wort wird zu EINEM Symbol: die Glyphen werden in ein Feld gesetzt.
+ * Systematik, damit die Schrift lesbar bleibt:
+ *  - Vokale tragen einen Ring auf dem Schaft.
+ *  - Umlaute = Grundbuchstabe + zwei Punkte an den Seiten.
+ *  - Jeder Buchstabe hat eine eigene, deterministisch erzeugte Zweigkombination;
+ *    zwei Buchstaben unterscheiden sich immer in mindestens zwei Zweigen.
+ *  - Gleicher Schriftschlüssel -> immer dasselbe Alphabet.
  */
 (function (global) {
   'use strict';
@@ -19,9 +21,11 @@
   const BASE = 'abcdefghijklmnopqrstuvwxyzß0123456789'.split('');
   const UMLAUTS = { 'ä': 'a', 'ö': 'o', 'ü': 'u' };
   const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
-  const XS = [0, 0.3, 0.6];
-  const YS = [0, 0.25, 0.5, 0.75, 1];
-  const CELL = { w: 0.6, h: 1.2, top: -0.2 }; // Umlautpunkte liegen über y=0
+  const STEM_X = 0.3;
+  const SIDE_X = [0.0, 0.6];          // links, rechts
+  const YS = [0, 0.25, 0.5, 0.75, 1]; // Knotenhöhen im Band
+  const CELL = { w: 0.6, h: 1 };
+  const MAX_ROWS = 4;                 // Buchstaben je Säule
 
   /* ---------- Text -> Wörter ---------- */
 
@@ -48,85 +52,61 @@
 
   /* ---------- Glyph-Erzeugung ---------- */
 
-  function genBase(key, ch, attempt) {
-    const rng = createRng(`${key}|glyph|${ch}|${attempt}`);
-    const jn = () => rng.range(-0.022, 0.022);
-    const N = XS.map((x) => YS.map((y) => [x + jn(), y + jn()]));
-    const at = (n) => N[n[0]][n[1]];
-    const prim = [];
-    const sig = [];
-    const conn = []; // Knoten (xi, yi), an denen Striche ansetzen dürfen
+  // Ein Zweig: Schaftknoten y0 -> Seitenknoten (side, y1), gerade oder gebogen
+  function makeBranch(rng) {
+    const side = rng.int(0, 1);
+    const y0 = rng.int(0, 4);
+    const y1 = rng.int(0, 4);
+    const curved = rng.next() < 0.45;
+    const bulge = curved ? rng.sign() : 0;
+    return { side, y0, y1, curved, bulge };
+  }
+  const branchSig = (b) => `${b.side}${b.y0}${b.y1}${b.curved ? (b.bulge > 0 ? 'p' : 'm') : 'l'}`;
+
+  function genSig(key, ch, attempt) {
+    const rng = createRng(`${key}|schaft|${ch}|${attempt}`);
     const vowel = VOWELS.has(ch);
-
-    // Schaft
-    const sp = rng.next();
-    if (sp < 0.62) {
-      const y0 = rng.pick([0, 0, 1]);
-      const y1 = rng.pick([4, 4, 3]);
-      prim.push({ t: 'L', p: [at([1, y0]), at([1, y1])] });
-      for (let y = y0; y <= y1; y++) conn.push([1, y]);
-      sig.push(`S|${y0}-${y1}`);
-    } else if (sp < 0.82) {
-      const bulge = rng.sign() * rng.range(0.22, 0.32);
-      const a = at([1, 0]), b = at([1, 4]);
-      prim.push({ t: 'Q', p: [a, [0.3 + bulge, 0.5], b] });
-      conn.push([1, 0], [1, 4], [1, 2]);
-      sig.push(`B|${bulge > 0 ? '+' : '-'}`);
-    } else {
-      prim.push({ t: 'L', p: [at([0, 1]), at([0, 3])] });
-      prim.push({ t: 'L', p: [at([2, 0]), at([2, 2])] });
-      conn.push([0, 1], [0, 3], [2, 0], [2, 2]);
-      sig.push('D');
+    const count = vowel ? rng.int(1, 2) : rng.int(2, 3);
+    const branches = [];
+    const seen = new Set();
+    let guard = 0;
+    while (branches.length < count && guard++ < 40) {
+      const b = makeBranch(rng);
+      if (b.y0 === b.y1 && b.curved) continue;                 // flacher Bogen sieht nach nichts aus
+      if (b.y0 === b.y1 && b.y0 % 4 === 0) continue;            // Zweig am Rand parallel zum Band
+      const s = branchSig(b);
+      if (seen.has(s)) continue;
+      seen.add(s);
+      branches.push(b);
     }
+    return { branches, vowel, sigSet: new Set(branches.map(branchSig).concat(vowel ? ['ring'] : [])) };
+  }
 
-    // Abzweigende Striche
-    const count = vowel ? rng.int(1, 3) : rng.int(2, 4);
-    const used = new Set();
-    for (let k = 0; k < count; k++) {
-      for (let tries = 0; tries < 14; tries++) {
-        const s = rng.pick(conn);
-        const e = [rng.int(0, 2), rng.int(0, 4)];
-        if (s[0] === e[0] && s[1] === e[1]) continue;
-        const d = Math.hypot(XS[e[0]] - XS[s[0]], YS[e[1]] - YS[s[1]]);
-        if (d < 0.29) continue;
-        const id = `${s}-${e}`;
-        if (used.has(id)) continue;
-        used.add(id);
-        const a = at(s), b = at(e);
-        if (rng.next() < 0.62) {
-          prim.push({ t: 'L', p: [a, b] });
-          sig.push(`L|${id}`);
-        } else {
-          const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-          const nx = -(b[1] - a[1]), ny = b[0] - a[0];
-          const nl = Math.hypot(nx, ny) || 1;
-          const off = rng.sign() * rng.range(0.12, 0.26);
-          prim.push({ t: 'Q', p: [a, [mx + (nx / nl) * off, my + (ny / nl) * off], b] });
-          sig.push(`Q|${id}|${off > 0 ? '+' : '-'}`);
-        }
-        conn.push(e);
-        break;
+  const distance = (a, b) => {
+    let d = 0;
+    a.forEach((x) => { if (!b.has(x)) d++; });
+    b.forEach((x) => { if (!a.has(x)) d++; });
+    return d;
+  };
+
+  function toPrimitives(g, key, ch) {
+    const rng = createRng(`${key}|form|${ch}`);
+    const prim = [{ t: 'L', p: [[STEM_X, 0], [STEM_X, 1]] }]; // durchgehender Schaft
+    g.branches.forEach((b) => {
+      const jx = rng.range(-0.012, 0.012);
+      const a = [STEM_X, YS[b.y0]];
+      const e = [SIDE_X[b.side] + jx, YS[b.y1]];
+      if (!b.curved) prim.push({ t: 'L', p: [a, e] });
+      else {
+        const mx = (a[0] + e[0]) / 2, my = (a[1] + e[1]) / 2;
+        const nx = -(e[1] - a[1]), ny = e[0] - a[0];
+        const nl = Math.hypot(nx, ny) || 1;
+        const off = b.bulge * 0.2;
+        prim.push({ t: 'Q', p: [a, [mx + (nx / nl) * off, my + (ny / nl) * off], e] });
       }
-    }
-
-    // Vokal-Ring bzw. gelegentlicher Punkt bei Konsonanten
-    if (vowel) {
-      const c = rng.pick(conn);
-      prim.push({ t: 'O', c: at(c), r: 0.1, fill: false });
-      sig.push(`R|${c}`);
-    } else if (rng.next() < 0.3) {
-      const corners = [[0, 0], [2, 0], [0, 4], [2, 4]].filter(
-        (c) => !conn.some((q) => q[0] === c[0] && q[1] === c[1])
-      );
-      if (corners.length) {
-        const c = rng.pick(corners);
-        const p = at(c);
-        // Punkt leicht zur Mitte gerückt, damit er nicht am Rand klebt
-        prim.push({ t: 'O', c: [p[0] + (c[0] === 0 ? 0.07 : -0.07), p[1] + (c[1] === 0 ? 0.07 : -0.07)], r: 0.04, fill: true });
-        sig.push(`P|${c}`);
-      }
-    }
-    return { prim, sig: sig.join(';') };
+    });
+    if (g.vowel) prim.push({ t: 'O', c: [STEM_X, 0.5], r: 0.11, fill: false });
+    return prim;
   }
 
   const cache = {};
@@ -134,23 +114,25 @@
   function buildAlphabet(key) {
     if (cache[key]) return cache[key];
     const glyphs = {};
-    const seen = new Set();
+    const taken = [];
     BASE.forEach((ch) => {
-      let g;
-      for (let attempt = 0; attempt < 60; attempt++) {
-        g = genBase(key, ch, attempt);
-        if (!seen.has(g.sig)) break;
+      let best = null;
+      for (let attempt = 0; attempt < 400; attempt++) {
+        const g = genSig(key, ch, attempt);
+        const minD = taken.length ? Math.min(...taken.map((t) => distance(g.sigSet, t))) : 9;
+        if (!best || minD > best.minD) best = { g, minD };
+        if (minD >= 2) break;
       }
-      seen.add(g.sig);
-      glyphs[ch] = { ch, prim: g.prim };
+      taken.push(best.g.sigSet);
+      glyphs[ch] = { ch, prim: toPrimitives(best.g, key, ch), minDistance: best.minD };
     });
     Object.keys(UMLAUTS).forEach((u) => {
       const base = glyphs[UMLAUTS[u]];
       glyphs[u] = {
         ch: u,
         prim: base.prim.concat([
-          { t: 'O', c: [0.16, -0.12], r: 0.04, fill: true },
-          { t: 'O', c: [0.44, -0.12], r: 0.04, fill: true },
+          { t: 'O', c: [0.06, 0.5], r: 0.04, fill: true },
+          { t: 'O', c: [0.54, 0.5], r: 0.04, fill: true },
         ]),
       };
     });
@@ -162,41 +144,38 @@
 
   const f1 = (v) => (Math.round(v * 100) / 100).toString();
 
-  // Setzt die Glyphen eines Wortes in ein Feld (boxW x boxH) um (cx, cy).
+  // Setzt die Buchstaben eines Wortes als Säulen auf einen gemeinsamen Schaft.
   function layoutWord(word, alphabet, cx, cy, boxW, boxH) {
-    const chars = Array.from(word);
+    const chars = Array.from(word).filter((c) => alphabet.glyphs[c]);
     const n = chars.length;
-    const gx = 0.3, gy = 0.25;
+    const gapX = 0.5;
     let best = null;
-    for (let cols = 1; cols <= n; cols++) {
-      const rows = Math.ceil(n / cols);
-      const totalW = cols * CELL.w + (cols - 1) * gx;
-      const totalH = rows * CELL.h + (rows - 1) * gy;
+    for (let rows = 1; rows <= Math.min(n, MAX_ROWS); rows++) {
+      const cols = Math.ceil(n / rows);
+      const totalW = cols * CELL.w + (cols - 1) * gapX;
+      const totalH = rows * CELL.h;
       const scale = Math.min(boxW / totalW, boxH / totalH);
-      if (!best || scale > best.scale + 1e-9) best = { cols, rows, scale, totalW, totalH };
+      if (!best || scale > best.scale + 1e-9) best = { rows, cols, scale, totalW, totalH };
     }
-    const { cols, rows, scale, totalW, totalH } = best;
     let d = '';
-    const dots = [];
-    const rings = [];
+    const dots = [], rings = [];
+    if (!best) return { d, dots, rings, scale: 1, strokeWidth: 1.5 };
+    const { rows, cols, scale, totalW, totalH } = best;
     chars.forEach((ch, i) => {
-      const g = alphabet.glyphs[ch];
-      if (!g) return;
-      const r = Math.floor(i / cols), c = i % cols;
-      const inRow = r < rows - 1 ? cols : n - (rows - 1) * cols;
-      const rowW = inRow * CELL.w + (inRow - 1) * gx;
-      const ox = -totalW / 2 + (totalW - rowW) / 2 + c * (CELL.w + gx);
-      const oy = -totalH / 2 + r * (CELL.h + gy) - CELL.top;
+      const c = Math.floor(i / rows), r = i % rows;
+      const inCol = c < cols - 1 ? rows : n - (cols - 1) * rows;
+      const ox = -totalW / 2 + c * (CELL.w + gapX);
+      const oy = -(inCol * CELL.h) / 2 + r * CELL.h; // letzte Säule mittig
       const X = (x) => cx + (ox + x) * scale;
       const Y = (y) => cy + (oy + y) * scale;
-      g.prim.forEach((p) => {
+      alphabet.glyphs[ch].prim.forEach((p) => {
         if (p.t === 'L') d += `M${f1(X(p.p[0][0]))} ${f1(Y(p.p[0][1]))}L${f1(X(p.p[1][0]))} ${f1(Y(p.p[1][1]))}`;
         else if (p.t === 'Q') d += `M${f1(X(p.p[0][0]))} ${f1(Y(p.p[0][1]))}Q${f1(X(p.p[1][0]))} ${f1(Y(p.p[1][1]))} ${f1(X(p.p[2][0]))} ${f1(Y(p.p[2][1]))}`;
         else if (p.fill) dots.push({ cx: X(p.c[0]), cy: Y(p.c[1]), r: Math.max(p.r * scale, 0.9) });
         else rings.push({ cx: X(p.c[0]), cy: Y(p.c[1]), r: p.r * scale });
       });
     });
-    return { d, dots, rings, scale, strokeWidth: Math.min(2.4, Math.max(1.1, scale * 0.085)) };
+    return { d, dots, rings, scale, strokeWidth: Math.min(2.6, Math.max(1.1, scale * 0.07)) };
   }
 
   function layoutToSvg(l, color) {
@@ -211,7 +190,7 @@
   function renderText(words, key, opts) {
     const o = Object.assign({ width: 760, glyph: 34, ink: '#1d1812', paper: '#f3ead7', label: '#6d604b' }, opts);
     const alphabet = buildAlphabet(key);
-    const rowH = o.glyph * 1.2 + 36;
+    const rowH = o.glyph * 1.3 + 36;
     let x = 14, y = 14, rows = 1;
     let body = '';
     words.forEach((w) => {
@@ -219,11 +198,10 @@
       if (x + wW > o.width - 14 && x > 14) { x = 14; y += rowH; rows++; }
       let cx = x;
       Array.from(w).forEach((ch) => {
-        const l = layoutWord(ch, alphabet, cx + o.glyph * 0.3, y + o.glyph * 0.62, o.glyph * 0.6, o.glyph * 1.2);
-        body += layoutToSvg(l, o.ink);
+        body += layoutToSvg(layoutWord(ch, alphabet, cx + o.glyph * 0.3, y + o.glyph * 0.65, o.glyph * 0.6, o.glyph * 1.2), o.ink);
         cx += o.glyph * 0.9;
       });
-      body += `<text x="${f1(x)}" y="${f1(y + o.glyph * 1.2 + 16)}" font-size="12" fill="${o.label}" font-family="Georgia, serif">${w}</text>`;
+      body += `<text x="${f1(x)}" y="${f1(y + o.glyph * 1.3 + 16)}" font-size="12" fill="${o.label}" font-family="Georgia, serif">${w}</text>`;
       x += wW + o.glyph * 0.7;
     });
     const h = rows * rowH + 10;
@@ -233,7 +211,7 @@
   function renderAlphabet(key, opts) {
     const o = Object.assign({ cols: 10, glyph: 40, ink: '#1d1812', paper: '#f3ead7', label: '#6d604b' }, opts);
     const alphabet = buildAlphabet(key);
-    const cellW = o.glyph * 1.5, cellH = o.glyph * 1.2 + 40;
+    const cellW = o.glyph * 1.5, cellH = o.glyph * 1.3 + 40;
     const rows = Math.ceil(alphabet.order.length / o.cols);
     const width = cellW * o.cols + 20, height = cellH * rows + 20;
     let body = '';

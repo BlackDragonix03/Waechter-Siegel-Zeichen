@@ -4,3 +4,4 @@ desktop/web/
 desktop/dist/
 android-app/
 *.log
+release/

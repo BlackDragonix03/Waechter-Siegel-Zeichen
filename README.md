@@ -24,7 +24,19 @@ Lauf öffnen, unten **Artefakte**). Auch von Hand startbar über **Run workflow*
   Quellen erlauben). Fürs Veröffentlichen im Play Store braucht es einen eigenen Schlüssel.
   Bilder werden dort über den Teilen-Dialog gespeichert.
 
-Lokal: `cd desktop && npm install && npm start` startet die Desktop-App zum Testen.
+### Selbst bauen unter Windows (Doppelklick)
+
+- **`build-windows-exe.bat`**: baut die Exe nach `release\`. Braucht nur Node.js 20 oder neuer.
+  Wenn „Cannot create symbolic link“ erscheint: als Administrator starten oder den
+  Windows-Entwicklermodus einschalten.
+- **`build-android-apk.bat`**: baut die APK nach `release\`. Braucht Node.js, **JDK 17**
+  (nicht neuer) und das **Android-SDK** (Android Studio installieren, `ANDROID_HOME` setzen).
+  Fehlende Teile meldet die Datei mit einer Anleitung.
+
+Beide laden beim ersten Start einige hundert MB aus dem Internet. Auf der Windows-Seite sind
+die Dateien nicht getestet worden, nur der Ablauf ist geprüft.
+
+Lokal testen: `cd desktop && npm install && npm start` startet die Desktop-App.
 
 ## Regeln der Welt, wie sie im Tool stecken
 

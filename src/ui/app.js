@@ -25,6 +25,7 @@
 
   const TABS = [
     ['calc', 'Siegel-Rechner'],
+    ['decode', 'Entschlüsseln'],
     ['elements', 'Elemente'],
     ['recipes', 'Rezepte'],
     ['opposites', 'Gegensätze'],
@@ -98,7 +99,7 @@
   function colorOf(el, depth) {
     depth = depth || 0;
     if (!el) return '#888';
-    if (el.color) return el.color;
+    if (el.color) return /^#[0-9a-fA-F]{6}$/.test(String(el.color)) ? el.color : '#888';
     if (el.recipe && depth < 8) {
       const first = data.elements.find((e) => e.id === el.recipe.ingredients[0]);
       return colorOf(first, depth + 1);
@@ -148,14 +149,19 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
-  function exportPng(svg, name) {
+  // payload: Angaben zum Siegel, werden ins PNG eingebettet, damit der Entschlüsseler es lesen kann
+  function exportPng(svg, name, payload) {
     const img = new Image();
     img.onload = () => {
       const px = 2400;
       const c = document.createElement('canvas');
       c.width = px; c.height = px;
       c.getContext('2d').drawImage(img, 0, 0, px, px);
-      c.toBlob((b) => { if (b) download(name, b); else alert('PNG-Export fehlgeschlagen.'); }, 'image/png');
+      c.toBlob(async (b) => {
+        if (!b) { alert('PNG-Export fehlgeschlagen.'); return; }
+        const bytes = new Uint8Array(await b.arrayBuffer());
+        download(name, new Blob([W.Decode.embedInPng(bytes, payload)], { type: 'image/png' }));
+      }, 'image/png');
     };
     img.onerror = () => alert('PNG-Export fehlgeschlagen.');
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
@@ -163,7 +169,9 @@
 
   function sealCard() {
     const themes = W.Seal.THEMES;
-    const r = W.Seal.build(data, spec, { theme: spec.theme, label: spec.label, placement: spec.placement || 'auto' });
+    const options = { theme: spec.theme, label: spec.label, placement: spec.placement || 'auto' };
+    const r = W.Seal.build(data, spec, options);
+    const payload = r.empty ? null : W.Decode.makePayload(data, spec, options, r.meta.id);
     const box = h('div', { class: 'sealbox' });
     if (r.empty) box.append(h('p', { class: 'hint' }, 'Füge links Elemente oder Bauteile hinzu, dann entsteht hier das Siegel.'));
     else box.innerHTML = r.svg;
@@ -175,10 +183,10 @@
         field('Zeichen ', select([['auto', 'je Teil (nach Definition)'], ['inner', 'alle im Siegel'], ['outer', 'alle am Rand']], spec.placement || 'auto', (v) => { spec.placement = v; commit(); })),
         field('Inschrift ', textInput(spec.label || '', (v) => { spec.label = v; commit(); }, { placeholder: 'Name oder Worte' }))),
       r.empty ? null : h('div', { class: 'row' },
-        btn('SVG speichern', () => download(`siegel-${r.meta.id}.svg`, new Blob([r.svg], { type: 'image/svg+xml' })), 'primary'),
-        btn('PNG speichern', () => exportPng(r.svg, `siegel-${r.meta.id}.png`), 'primary'),
+        btn('SVG speichern', () => download(`siegel-${r.meta.id}.svg`, new Blob([W.Decode.embedInSvg(r.svg, payload)], { type: 'image/svg+xml' })), 'primary'),
+        btn('PNG speichern', () => exportPng(r.svg, `siegel-${r.meta.id}.png`, payload), 'primary'),
         h('span', { class: 'muted' }, `Siegel-ID ${r.meta.id}`)),
-      h('p', { class: 'hint' }, 'Gleiche Anforderungen ergeben immer dasselbe Bild. Größe und Träger ändern das Bild nicht, nur die Kosten.'));
+      h('p', { class: 'hint' }, 'Gleiche Anforderungen ergeben immer dasselbe Bild. Größe und Träger ändern das Bild nicht, nur die Kosten. Der Export trägt alle Angaben mit, damit „Entschlüsseln“ das Siegel später lesen kann.'));
   }
 
   function controlsCard() {
@@ -329,6 +337,159 @@
       r.warnings.map((w) => h('div', { class: 'msg ' + w.level }, w.text)));
   }
   const stat = (label, value, sub) => h('div', { class: 'stat' }, h('span', {}, label), h('b', {}, value), h('span', {}, sub));
+
+  /* ---------- Entschlüsseln ---------- */
+
+  let decoded = null;
+  const SCRIPT_KEY = W.Seal.SCRIPT_KEY;
+
+  async function loadSealFile(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const read = W.Decode.readSealFile(bytes);
+    if (decoded && decoded.previewUrl) URL.revokeObjectURL(decoded.previewUrl);
+    const d = { name: file.name || 'Eingefügt', type: read.type, read, error: read.error, previewUrl: null, explain: null, structure: null, intact: null };
+    if (read.type === 'png' || read.type === 'svg') {
+      d.previewUrl = URL.createObjectURL(new Blob([bytes], { type: read.type === 'png' ? 'image/png' : 'image/svg+xml' }));
+    }
+    if (read.payload) {
+      try {
+        d.explain = W.Decode.explain(read.payload);
+        if (read.type === 'svg') d.intact = W.Decode.stripSvgMetadata(read.svgText) === d.explain.rebuiltSvg;
+      } catch (e) { d.error = e.message; }
+    } else if (read.type === 'svg') {
+      d.structure = W.Decode.decodeFromSvgStructure(read.svgText);
+    }
+    decoded = d;
+    render();
+  }
+
+  // Strg+V: Bilddatei oder SVG-Text aus der Zwischenablage lesen
+  document.addEventListener('paste', (e) => {
+    if (tab !== 'decode' || !e.clipboardData) return;
+    const item = Array.from(e.clipboardData.items || []).find((i) => i.kind === 'file');
+    if (item) { e.preventDefault(); loadSealFile(item.getAsFile()); return; }
+    const text = e.clipboardData.getData('text');
+    if (text && /<svg\b/.test(text)) { e.preventDefault(); loadSealFile(new File([text], 'Eingefügt.svg', { type: 'image/svg+xml' })); }
+  });
+
+  const scriptSvg = (words) => {
+    const box = h('div', { class: 'scriptbox' });
+    box.innerHTML = W.Script.renderText(words, SCRIPT_KEY, { width: 640, glyph: 32 });
+    return box;
+  };
+
+  function openInCalculator(payload, adoptRules) {
+    if (adoptRules) data = clone(payload.data);
+    spec = clone(payload.spec);
+    spec.label = (payload.options && payload.options.label) || '';
+    spec.theme = (payload.options && payload.options.theme) || 'color';
+    spec.placement = (payload.options && payload.options.placement) || 'auto';
+    tab = 'calc';
+    location.hash = 'calc';
+    commit();
+    window.scrollTo(0, 0);
+  }
+
+  function decodeCard(title, ...body) { return h('div', { class: 'card' }, h('h3', {}, title), ...body); }
+
+  function decodeReport(d) {
+    const preview = d.previewUrl ? h('img', { class: 'preview', src: d.previewUrl, alt: 'Eingelesenes Siegel' }) : null;
+    if (d.type === 'unknown') {
+      return decodeCard('Nicht lesbar', h('div', { class: 'msg error' }, `„${d.name}“ ist weder SVG noch PNG. Gelesen werden Siegel, die die Werkstatt als SVG oder PNG gespeichert hat.`));
+    }
+    if (d.error && !d.explain) {
+      return decodeCard('Nicht lesbar', preview, h('div', { class: 'msg error' }, d.error));
+    }
+    if (!d.explain) {
+      if (d.type === 'png') {
+        return decodeCard('Keine Siegeldaten im Bild', preview,
+          h('div', { class: 'msg warn' }, 'Dieses PNG trägt keine Angaben der Werkstatt. Das ist bei Screenshots, Fotos, bearbeiteten oder neu gespeicherten Bildern so. Ein Bild wird nie anhand seiner Pixel erkannt.'),
+          h('div', { class: 'msg info' }, 'Lesbar sind ein SVG oder PNG, direkt aus der Werkstatt gespeichert (Siegel-Rechner, „SVG speichern“ oder „PNG speichern“).'));
+      }
+      const s = d.structure;
+      const ins = s && s.inscription;
+      return h('div', { class: 'stack' },
+        decodeCard('Teilweise gelesen', h('div', { class: 'hint' }, `Datei: ${d.name}`), preview,
+          h('div', { class: 'msg warn' }, 'Dieses SVG trägt keine eingebetteten Angaben. Gelesen wurde nur, was die Zeichen im Bild verraten.'),
+          h('div', { class: 'stats' },
+            stat('Siegel-ID', s.id || '–', 'aus dem Bildtitel'),
+            stat('Musterbänder', String(s.bands), 'Elemente und Gegensätze'),
+            stat('Kreise', String(s.circles), 'Teile des Siegels'))),
+        ins ? decodeCard('Inschrift',
+          ins.words.length ? [h('div', { class: 'big' }, ins.words.join(' · ')), scriptSvg(ins.words)] : h('div', { class: 'muted' }, 'Keine Inschrift erkannt.'),
+          ins.startUnknown ? h('div', { class: 'msg info' }, 'Der Ring ist ein Kreis: der Anfang des Textes ist nicht erkennbar, die Reihenfolge der Wörter im Kreis stimmt.') : null,
+          ins.unknown ? h('div', { class: 'msg warn' }, `${ins.unknown} Zeichen waren nicht lesbar (mit ? markiert).`) : null) : null);
+    }
+
+    const x = d.explain;
+    const payload = d.read.payload;
+    const rulesDiffer = JSON.stringify(payload.data) !== JSON.stringify(data);
+    let proof;
+    if (d.type === 'svg') {
+      proof = d.intact
+        ? h('div', { class: 'msg info ok-line' }, 'Das Bild ist unverändert: es entspricht genau dem Siegel, das sich aus den Angaben ergibt.')
+        : x.idMatches
+          ? h('div', { class: 'msg warn' }, 'Das Bild wurde nach dem Speichern verändert. Die Angaben selbst sind stimmig.')
+          : h('div', { class: 'msg error' }, 'Angaben und Siegel-ID passen nicht zusammen. Die Datei wurde verändert.');
+    } else {
+      proof = x.idMatches
+        ? h('div', { class: 'msg info ok-line' }, 'Die Siegel-ID passt zu den Angaben. Ob die Pixel verändert wurden, lässt sich bei einem PNG nicht prüfen.')
+        : h('div', { class: 'msg error' }, 'Angaben und Siegel-ID passen nicht zusammen. Die Datei wurde verändert.');
+    }
+    // Die Gefahr getragener Quellen steht schon oben, nicht doppelt zeigen
+    const hints = x.warnings.filter((w) => !x.carried.some((c) => c.hazard && w.text.endsWith(c.hazard)));
+    const letters = Array.from(new Set(x.inscription.words.concat(x.circles).join('').split(''))).sort();
+
+    return h('div', { class: 'stack' },
+      decodeCard(`Siegel ${x.id}`,
+        h('div', { class: 'cols decode-head' }, preview,
+          h('div', {},
+            h('div', { class: 'big' }, `Typ ${x.typ}`),
+            h('div', { class: 'hint' }, `Datei: ${d.name} (${d.type.toUpperCase()}, mit eingebetteten Angaben)`),
+            proof,
+            rulesDiffer ? h('div', { class: 'msg info' }, 'Die Regeln der Werkstatt haben sich seit dem Speichern geändert. Die Erklärung verwendet die Regeln von damals.') : null,
+            h('div', { class: 'row' },
+              btn('Im Rechner öffnen', () => openInCalculator(payload, false), 'primary'),
+              rulesDiffer ? btn('Mit den Regeln von damals öffnen', () => { if (confirm('Die aktuellen Regeln werden durch die Regeln dieses Siegels ersetzt. Exportiere sie vorher, wenn du sie behalten willst. Fortfahren?')) openInCalculator(payload, true); }, 'danger') : null)))),
+      decodeCard('Was es ist',
+        h('h3', {}, 'Teile'),
+        h('ul', { class: 'clean' }, x.parts.map((p) => h('li', {},
+          h('b', {}, p.name), ' ',
+          h('span', { class: 'chip' }, { element: 'Element', battery: 'Batterie', generator: 'Generator', seal: 'Siegel im Siegel' }[p.kind] || p.kind),
+          p.fused ? h('span', { class: 'chip' }, 'verwoben') : null,
+          h('span', { class: 'chip' }, p.place === 'inner' ? 'Zeichen innen' : 'Zeichen außen'),
+          p.recipe ? h('div', { class: 'hint' }, `${p.recipe}`) : null))),
+        h('h3', {}, 'Urelemente'),
+        h('div', { class: 'row' }, x.primes.length ? x.primes.map((p) => h('span', { class: 'chip' }, `${p.name}${p.count > 1 ? ' ×' + p.count : ''}`)) : h('span', { class: 'muted' }, 'keine')),
+        h('h3', {}, 'Gegensätze'),
+        x.oppositions.length ? h('ul', { class: 'clean' }, x.oppositions.map((o) => h('li', {}, o))) : h('div', { class: 'muted' }, 'keine'),
+        h('div', { class: 'stats' },
+          stat('Komplexität', fmt(x.complexity.total), `Teile ${fmt(x.complexity.parts)} + Gegensätze ${fmt(x.complexity.oppositions)}`),
+          stat('Erschaffung', `${fmt(x.creation)} jqm`, `Größe ×${fmt(x.size)}`),
+          stat('Nutzung', `${fmt(x.usage.total)} jqm`, `je Aktivierung, Träger: ${x.carrier}`)),
+        x.carried.length ? [h('h3', {}, 'Am Körper getragen'), h('ul', { class: 'clean' }, x.carried.map((c) => h('li', {}, `${c.amount}× ${c.name} (${c.level}): ${fmt(c.total)} jqm`, c.hazard ? h('div', { class: 'msg warn' }, c.hazard) : null)))] : null,
+        hints.length ? [h('h3', {}, 'Hinweise'), hints.map((w) => h('div', { class: 'msg ' + w.level }, w.text))] : null),
+      decodeCard('Texte',
+        h('h3', {}, x.inscription.fromLabel ? 'Inschrift im Ring' : 'Ring: die Namen der Teile (keine eigene Inschrift)'),
+        h('div', { class: 'big' }, x.inscription.words.join(' · ')),
+        scriptSvg(x.inscription.words),
+        h('h3', {}, 'Wörter in den Kreisen'),
+        h('div', { class: 'big' }, x.circleNames.join(' · ')),
+        h('div', { class: 'hint' }, 'In der Schrift ist jeder Name ein Symbol, ohne Leerzeichen.'),
+        scriptSvg(x.circles),
+        h('h3', {}, 'Schrifttafel der verwendeten Zeichen'),
+        scriptSvg(letters)));
+  }
+
+  function renderDecode() {
+    const file = h('input', { type: 'file', accept: '.svg,.png,image/svg+xml,image/png', onchange: (e) => { if (e.target.files[0]) loadSealFile(e.target.files[0]); } });
+    const drop = h('div', { class: 'drop', ondragover: (e) => { e.preventDefault(); drop.classList.add('over'); }, ondragleave: () => drop.classList.remove('over'),
+      ondrop: (e) => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) loadSealFile(f); } },
+      h('p', {}, h('b', {}, 'Siegel hier ablegen'), ', mit Strg+V einfügen oder eine Datei wählen.'),
+      file,
+      h('p', { class: 'hint' }, 'Gelesen werden SVG- und PNG-Dateien, die die Werkstatt gespeichert hat. Screenshots, Fotos und JPEG tragen die Angaben nicht und lassen sich nicht lesen.'));
+    return h('div', { class: 'stack' }, drop, decoded ? decodeReport(decoded) : null);
+  }
 
   /* ---------- Elemente ---------- */
 
@@ -652,7 +813,7 @@
 
   /* ---------- Rahmen ---------- */
 
-  const views = { calc: renderCalc, elements: renderElements, recipes: renderRecipes, opposites: renderOpposites, parts: renderParts, settings: renderSettings, data: renderData };
+  const views = { calc: renderCalc, decode: renderDecode, elements: renderElements, recipes: renderRecipes, opposites: renderOpposites, parts: renderParts, settings: renderSettings, data: renderData };
 
   // Das Entfernen eines fokussierten Felds löst "change" aus und damit ein weiteres
   // render(). Deshalb: Fokus zuerst abgeben und verschachtelte Aufrufe zusammenfassen.

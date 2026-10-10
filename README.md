@@ -38,6 +38,24 @@ die Dateien nicht getestet worden, nur der Ablauf ist geprüft.
 
 Lokal testen: `cd desktop && npm install && npm start` startet die Desktop-App.
 
+## Siegel entschlüsseln
+
+Im Bereich **Entschlüsseln** legst du ein Siegel ab (Datei wählen, hineinziehen oder mit Strg+V
+einfügen). Das Tool sagt, was es ist: Typ, Teile mit Rezepten, Urelemente, Gegensätze,
+Komplexität, Kosten, getragene Kristalle samt Warnung, die Inschrift und die Wörter in den
+Kreisen, jeweils im Klartext und in der Schrift, dazu eine Schrifttafel der verwendeten Zeichen.
+
+- **Was gelesen wird:** SVG und PNG, die die Werkstatt gespeichert hat. Der Export bettet alle
+  Angaben ein, auch die damals gültigen Regeln. Die Erklärung gilt also, auch wenn du die
+  Regeln später geändert hast. Aus der ID wird das Siegel nachgebaut und verglichen:
+  Veränderungen fallen auf.
+- **SVG ohne Angaben:** Dann liest das Tool die Zeichen im Inschriftring, zählt Bänder und
+  Kreise und nennt die Inschrift. Der Ring ist ein Kreis, der Anfang des Textes ist dann
+  eventuell nicht erkennbar.
+- **Was nicht geht:** Screenshots, Fotos, JPEG und mit anderen Programmen neu gespeicherte PNG.
+  Ein Bild wird nie anhand seiner Pixel erkannt. Dafür bräuchte das Siegel einen sichtbaren
+  Datenring, der auch Screenshots übersteht. Das wäre ein eigener Schritt.
+
 ## Regeln der Welt, wie sie im Tool stecken
 
 - **Urelemente:** Erde, Feuer, Wasser, Luft, Licht, Dunkel, Mystic, Natura.

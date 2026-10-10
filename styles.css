@@ -87,3 +87,12 @@ ul.clean { margin: 4px 0; padding-left: 18px; }
 
 .sealbox { background: #0003; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
 .sealbox svg { display: block; width: 100%; height: auto; }
+
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; background: var(--panel); }
+.drop.over { border-color: var(--accent); background: var(--panel2); }
+.preview { max-width: 100%; max-height: 360px; border-radius: 8px; background: #0003; }
+.decode-head { grid-template-columns: minmax(0, 360px) minmax(0, 1fr); }
+@media (max-width: 860px) { .decode-head { grid-template-columns: 1fr; } }
+.scriptbox { border-radius: 8px; overflow: hidden; margin: 6px 0; }
+.scriptbox svg { display: block; width: 100%; height: auto; }
+.msg.ok-line { border-color: var(--ok); }

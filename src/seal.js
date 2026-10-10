@@ -22,6 +22,7 @@
   const S = W.Script;
   const TAU = Math.PI * 2;
   const KEY = (W.Lore && W.Lore.alphabetKey) || 'waechter';
+  const INSCRIPTION_GLYPH = 17; // Höhe der Buchstaben im Inschriftring (der Entschlüssler gleicht damit ab)
 
   const n1 = (v) => { const r = Math.round(v * 10) / 10; return Object.is(r, -0) ? '0' : String(r); };
   const pt = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
@@ -67,6 +68,9 @@
     color: { label: 'Elementfarben',  paper: '#f3ead7', ink: '#1d1812', colors: true },
     glow:  { label: 'Leuchtend',      paper: '#0e0c14', ink: '#efe3c6', colors: true, lighten: true, glow: true },
   };
+
+  // Farben stammen aus Daten (auch aus eingebetteten Daten fremder Dateien): nur #rrggbb, sonst Grau
+  const safeColor = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c)) ? String(c) : '#888888');
 
   function lighten(hex, amount) {
     const v = parseInt(hex.slice(1), 16);
@@ -309,7 +313,7 @@
     const V = parts.length >= 3 ? parts.length : 4;
     const color = (id) => {
       if (!theme.colors) return theme.ink;
-      const c = (idx.byId.get(id) || {}).color || '#888888';
+      const c = safeColor((idx.byId.get(id) || {}).color);
       return theme.lighten ? lighten(c, 0.35) : c;
     };
 
@@ -468,7 +472,7 @@
       const words = labelWords.length ? labelWords : S.parseText(parts.map((p) => p.name).join(' ')).words;
       const tokens = [];
       words.forEach((w) => { Array.from(w).forEach((ch) => tokens.push(ch)); tokens.push('·'); });
-      const gh = 17;
+      const gh = INSCRIPTION_GLYPH;
       const pitch = gh * 0.6 + 7;
       const circ = TAU * rm;
       let seq = tokens;
@@ -602,6 +606,6 @@
     };
   }
 
-  W.Seal = { build, canonicalParts, THEMES };
+  W.Seal = { build, canonicalParts, THEMES, SCRIPT_KEY: KEY, INSCRIPTION_GLYPH };
   if (typeof module === 'object' && module.exports) module.exports = W.Seal;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

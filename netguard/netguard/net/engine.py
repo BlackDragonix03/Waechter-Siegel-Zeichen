@@ -11,7 +11,7 @@ from typing import Callable
 
 from ..model import Device, Scan, now_iso
 from .. import oui, classify, diagnostics
-from . import local, ping as pingmod, arp as arpmod, names as namesmod, ports as portsmod, ssdp as ssdpmod, trace as tracemod
+from . import local, ping as pingmod, arp as arpmod, names as namesmod, ports as portsmod, ssdp as ssdpmod, trace as tracemod, discover as discovermod
 
 ProgressCb = Callable[[str, int, int, str], None]
 DeviceCb = Callable[[Device], None]
@@ -32,6 +32,8 @@ class ScanOptions:
     trace_all: bool = False       # Pfad zu jedem Gerät (langsam)
     internet_check: bool = True
     max_hosts: int = 4096
+    discover: str = "none"        # "none" | "quick" | "full": versteckte Subnetze suchen
+    discover_timeout_ms: int = 350
 
 
 class ScanCancelled(Exception):
@@ -72,7 +74,46 @@ class Scanner:
         targets = [t for t in self.opt.targets if t.strip()] or local.default_targets(ifaces)
         scan.targets = targets
         own = local.own_ips(ifaces)
-        hosts = local.expand_targets(targets, self.opt.max_hosts)
+
+        # ---- Subnetz-Suche (Full Scan) ------------------------------------
+        if self.opt.discover in ("quick", "full"):
+            self._prog("Subnetze suchen", 0, 1, "Routing- und ARP-Tabelle lesen")
+            hints: list[str] = []
+            for n in discovermod.route_networks() + discovermod.arp_hint_networks():
+                if n not in hints:
+                    hints.append(n)
+            # Pfad ins Internet: Router dazwischen verraten weitere Subnetze
+            try:
+                for hop in tracemod.path_routers("1.1.1.1", 12, 600, self._stop.is_set, exclude=own):
+                    if ipaddress.IPv4Address(hop).is_private:
+                        hints.append(discovermod._net(hop))
+            except Exception:
+                pass
+            local_nets = [i.cidr for i in ifaces if i.cidr]
+            exclude = []
+            for n in local_nets:
+                net = ipaddress.IPv4Network(n)
+                exclude.extend(str(x) for x in (net.subnets(new_prefix=24) if net.prefixlen <= 24 else [ipaddress.IPv4Network(f"{net.network_address}/24", strict=False)]))
+            # Hinweise mit größeren Netzen direkt komplett scannen (bis /22)
+            for h in hints:
+                net = ipaddress.IPv4Network(h, strict=False)
+                if 22 <= net.prefixlen <= 24 and str(net) not in targets and not any(net.subnet_of(ipaddress.IPv4Network(t)) for t in local_nets):
+                    targets.append(str(net))
+            cands = discovermod.candidate_subnets(self.opt.discover, hints, exclude=exclude + targets)
+            self._check()
+            found = discovermod.probe_subnets(
+                cands, self.opt.discover_timeout_ms, 256,
+                discovermod.PROBE_HOSTS_FULL if self.opt.discover == "full" else discovermod.PROBE_HOSTS_QUICK,
+                progress=lambda d, t, m: self._prog("Subnetze suchen", d, t, m), stop=self._stop.is_set)
+            self._check()
+            for net in sorted(found, key=lambda n: int(ipaddress.IPv4Network(n).network_address)):
+                if net not in targets:
+                    targets.append(net)
+            scan.discovered = sorted(found)
+            scan.targets = targets
+            self._prog("Subnetze suchen", 1, 1, f"{len(found)} zusätzliche Subnetze: {', '.join(scan.discovered) or 'keine'}")
+
+        hosts = local.expand_targets(targets, max(self.opt.max_hosts, 254 * len(targets) + 64))
         for gw in scan.gateways:
             if gw not in hosts:
                 hosts.append(gw)

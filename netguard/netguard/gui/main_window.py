@@ -58,6 +58,11 @@ class MainWindow(QMainWindow):
         self.btn_scan.setShortcut(QKeySequence("F5"))
         self.btn_scan.clicked.connect(self.start_scan)
         tb.addWidget(self.btn_scan)
+        self.btn_full = QPushButton("🔍  Full Scan")
+        self.btn_full.setToolTip("Sucht ohne Zielangabe alle privaten Bereiche (192.168.x.x, 172.16-31.x.x, 10.x.x.x) nach versteckten Subnetzen\n"
+                                 "und scannt alle gefundenen Subnetze komplett. Dauert je nach Stufe 1 bis 10 Minuten.")
+        self.btn_full.clicked.connect(self.start_full_scan)
+        tb.addWidget(self.btn_full)
         self.btn_stop = QPushButton("■  Stopp")
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self.stop_scan)
@@ -111,6 +116,15 @@ class MainWindow(QMainWindow):
         self.chk_compare.setChecked(True)
         self.chk_compare.setToolTip("Nach dem Scan automatisch neue, geänderte und fehlende Geräte markieren")
         tb.addWidget(self.chk_compare)
+        tb.addSeparator()
+        tb.addWidget(QLabel("Subnetz-Suche:"))
+        self.discover_mode = QComboBox()
+        self.discover_mode.addItem("aus (nur Ziele)", "none")
+        self.discover_mode.addItem("schnell: 192.168.*, 172.16-31.*, gängige 10.*", "quick")
+        self.discover_mode.addItem("vollständig: zusätzlich 10.0.0.0/8 komplett", "full")
+        self.discover_mode.setToolTip("Prüft in jedem möglichen /24 die Adressen .1, .254 und .2. Antwortet eine, wird das Subnetz komplett gescannt.\n"
+                                      "Hinweise aus Routing-Tabelle, ARP-Tabelle und Traceroute werden immer zuerst geprüft.")
+        tb.addWidget(self.discover_mode)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         tb.addWidget(spacer)
@@ -237,6 +251,9 @@ class MainWindow(QMainWindow):
         self.chk_upnp.setChecked(s.get("upnp", True))
         self.chk_trace.setChecked(s.get("trace", True))
         self.chk_compare.setChecked(s.get("compare", True))
+        idx = self.discover_mode.findData(s.get("discover", "none"))
+        if idx >= 0:
+            self.discover_mode.setCurrentIndex(idx)
         self.live.router_ip.setText(s.get("router_ip", ""))
         self.live.tr_user.setText(s.get("tr064_user", ""))
         self.live.tr_pass.setText(s.get("tr064_password", ""))
@@ -260,6 +277,7 @@ class MainWindow(QMainWindow):
             "upnp": self.chk_upnp.isChecked(),
             "trace": self.chk_trace.isChecked(),
             "compare": self.chk_compare.isChecked(),
+            "discover": self.discover_mode.currentData(),
             "router_ip": self.live.router_ip.text().strip(),
             "tr064_user": self.live.tr_user.text().strip(),
             "tr064_password": self.live.tr_pass.text(),
@@ -293,17 +311,37 @@ class MainWindow(QMainWindow):
             port_mode=self.port_mode.currentData() or "quick",
             upnp=self.chk_upnp.isChecked(),
             traceroute=self.chk_trace.isChecked(),
+            discover=self.discover_mode.currentData() or "none",
         )
 
-    def start_scan(self) -> None:
+    def start_full_scan(self) -> None:
+        """Full Scan: eigene Subnetze plus Suche nach versteckten Subnetzen, ohne Zielangabe."""
+        mode = self.discover_mode.currentData()
+        if mode == "none":
+            idx = self.discover_mode.findData("quick")
+            self.discover_mode.setCurrentIndex(idx)
+            mode = "quick"
+        if mode == "full":
+            if QMessageBox.question(self, "Vollständiger Full Scan",
+                                    "Es werden rund 70.000 mögliche Subnetze geprüft (etwa 140.000 Pings). Das dauert meist 3 bis 10 Minuten.\n"
+                                    "Die Stufe „schnell“ prüft etwa 8.000 Subnetze in rund einer Minute.\n\nVollständig fortfahren?") != QMessageBox.StandardButton.Yes:
+                return
+        self.targets.setText("")
+        self.start_scan(force_discover=True)
+
+    def start_scan(self, force_discover: bool = False) -> None:
         if self.worker is not None and self.worker.isRunning():
             return
         opts = self._options()
-        hosts = local.expand_targets(opts.targets or local.default_targets(local.interfaces()))
-        if not hosts:
-            QMessageBox.warning(self, "Keine Ziele", "Bitte gültige Ziele eingeben, z.B. 192.168.178.0/24 oder 10.0.0.1-50.")
+        if force_discover and opts.discover == "none":
+            opts.discover = "quick"
+        if not opts.targets:
+            opts.targets = local.default_targets(local.interfaces())
+        hosts = local.expand_targets(opts.targets)
+        if not hosts and opts.discover == "none":
+            QMessageBox.warning(self, "Keine Ziele", "Bitte gültige Ziele eingeben, z.B. 192.168.178.0/24 oder 10.0.0.1-50, oder die Subnetz-Suche einschalten.")
             return
-        if len(hosts) > 2048:
+        if len(hosts) > 2048 and opts.discover == "none":
             if QMessageBox.question(self, "Großer Scan", f"{len(hosts)} Adressen werden geprüft. Das kann mehrere Minuten dauern. Fortfahren?") != QMessageBox.StandardButton.Yes:
                 return
         self._live = {}
@@ -311,6 +349,7 @@ class MainWindow(QMainWindow):
         self.compare_with = None
         self.devices.set_devices([])
         self.btn_scan.setEnabled(False)
+        self.btn_full.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
@@ -341,6 +380,7 @@ class MainWindow(QMainWindow):
 
     def _scan_done_ui(self) -> None:
         self.btn_scan.setEnabled(True)
+        self.btn_full.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.progress.setVisible(False)
 
@@ -382,6 +422,9 @@ class MainWindow(QMainWindow):
         n_missing = sum(1 for df in (self.diffs or []) if df.status == STATUS_MISSING)
         n_changed = sum(1 for df in (self.diffs or []) if df.status == STATUS_CHANGED)
         msg = f"Fertig: {len(scan.devices)} Geräte in {scan.duration_s:.0f} s · gespeichert als {path.name}"
+        if scan.discovered:
+            msg += f" · {len(scan.discovered)} versteckte Subnetze: {', '.join(scan.discovered)}"
+            self.targets.setText(", ".join(scan.targets))
         if self.diffs is not None:
             msg += f" · neu {n_new}, geändert {n_changed}, fehlt {n_missing}"
         errors = [p for p in scan.problems if p["severity"] == diagnostics.SEV_ERROR]

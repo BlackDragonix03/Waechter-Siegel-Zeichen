@@ -109,6 +109,7 @@ class DiagnosticsPanel(QWidget):
         <table>
         <tr><td>Zeitpunkt</td><td>{scan.started.replace('T', ' ')} ({scan.duration_s:.0f} s)</td></tr>
         <tr><td>Ziele</td><td>{', '.join(scan.targets)}</td></tr>
+        <tr><td>Gefundene Subnetze</td><td>{', '.join(scan.discovered) if scan.discovered else ('keine zusätzlichen' if scan.options.get('discover', 'none') != 'none' else 'Subnetz-Suche war aus')}</td></tr>
         <tr><td>Geräte</td><td>{len(scan.devices)}</td></tr>
         <tr><td>Gateways</td><td>{', '.join(scan.gateways) or '–'}</td></tr>
         <tr><td>Internet</td><td>{inet}{(' · öffentliche IP ' + scan.public_ip) if scan.public_ip else ''}</td></tr>

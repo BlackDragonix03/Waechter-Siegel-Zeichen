@@ -3,6 +3,13 @@
 Ein Werkzeug für Windows (läuft auch unter Linux/macOS), das das eigene Netzwerk durchsucht
 und alles zeigt, was man zur Fehlersuche braucht:
 
+- **Full Scan ohne Zielangabe**: Die Subnetz-Suche prüft alle privaten Bereiche (192.168.x.x,
+  172.16–31.x.x, 10.x.x.x) auf versteckte Subnetze. Pro möglichem /24 werden nur die typischen
+  Router-Adressen .1, .254 und .2 angepingt; antwortet eine, wird das Subnetz komplett gescannt.
+  Hinweise aus Routing-Tabelle, ARP-Tabelle und Traceroute werden zuerst geprüft. Stufe „schnell“:
+  rund 8.000 Subnetze in etwa einer Minute; „vollständig“: zusätzlich 10.0.0.0/8 komplett
+  (rund 70.000 Subnetze, 3 bis 10 Minuten). Gefundene Netze erscheinen in Topologie, Diagnose und
+  werden als Ziele übernommen.
 - **Geräte finden**: ICMP-Ping, ARP (unter Windows direkt per `SendARP`, findet auch Geräte,
   die Ping blockieren), TCP-Probe, UPnP/SSDP. Mehrere Subnetze und Bereiche gleichzeitig
   (`192.168.178.0/24, 10.0.0.1-50`).

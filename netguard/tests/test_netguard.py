@@ -10,7 +10,7 @@ os.environ["NETGUARD_DATA"] = tempfile.mkdtemp(prefix="netguard-test-")
 
 from netguard import oui, classify, storage, diagnostics  # noqa: E402
 from netguard.model import Device, Scan, InterfaceInfo, compare_scans, merge_previous_values, STATUS_NEW, STATUS_MISSING, STATUS_CHANGED, STATUS_SAME  # noqa: E402
-from netguard.net import local  # noqa: E402
+from netguard.net import local, discover  # noqa: E402
 
 
 class OuiTests(unittest.TestCase):
@@ -61,6 +61,30 @@ class TargetTests(unittest.TestCase):
         self.assertEqual(local.subnet_of("192.168.1.9", [], ifaces), "192.168.1.0/24")
         self.assertEqual(local.subnet_of("10.1.2.3", ["10.1.0.0/16"], ifaces), "10.1.0.0/16")
         self.assertEqual(local.subnet_of("172.16.5.3", [], ifaces), "172.16.5.0/24")
+
+
+class DiscoverTests(unittest.TestCase):
+    def test_candidates(self):
+        quick = discover.candidate_subnets("quick")
+        self.assertEqual(len(quick), len(set(quick)))
+        self.assertIn("192.168.178.0/24", quick)
+        self.assertIn("172.31.255.0/24", quick)
+        self.assertIn("10.10.5.0/24", quick)
+        self.assertNotIn("10.77.123.0/24", quick)
+        full = discover.candidate_subnets("full")
+        self.assertIn("10.77.123.0/24", full)
+        self.assertGreater(len(full), 65536)
+
+    def test_hints_and_exclude(self):
+        c = discover.candidate_subnets("quick", hints=["10.99.4.0/22", "192.168.5.17/24"], exclude=["192.168.0.0/24"])
+        self.assertEqual(c[:4], ["10.99.4.0/24", "10.99.5.0/24", "10.99.6.0/24", "10.99.7.0/24"])
+        self.assertEqual(c[4], "192.168.5.0/24")
+        self.assertNotIn("192.168.0.0/24", c)
+        self.assertEqual(len(c), len(set(c)))
+
+    def test_route_networks(self):
+        for n in discover.route_networks():
+            self.assertIn("/", n)
 
 
 class CompareTests(unittest.TestCase):

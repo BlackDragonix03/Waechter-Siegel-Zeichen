@@ -114,6 +114,7 @@ class Scan:
     started: str = field(default_factory=now_iso)
     finished: str = ""
     targets: list[str] = field(default_factory=list)
+    discovered: list[str] = field(default_factory=list)      # per Subnetz-Suche gefundene Netze
     devices: list[Device] = field(default_factory=list)
     interfaces: list[InterfaceInfo] = field(default_factory=list)
     gateways: list[str] = field(default_factory=list)

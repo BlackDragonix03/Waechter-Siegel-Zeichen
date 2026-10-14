@@ -16,26 +16,28 @@ from .local import subprocess_flags
 
 IS_WINDOWS = sys.platform.startswith("win")
 
-_icmp_lock = threading.Lock()
-_icmp_handle = None
+_icmp_local = threading.local()
 _icmp_broken = False
 
 
 def _win_icmp_handle():
-    global _icmp_handle, _icmp_broken
-    with _icmp_lock:
-        if _icmp_handle is None and not _icmp_broken:
-            try:
-                iphlpapi = ctypes.windll.iphlpapi  # type: ignore[attr-defined]
-                iphlpapi.IcmpCreateFile.restype = ctypes.c_void_p
-                h = iphlpapi.IcmpCreateFile()
-                if h in (None, 0, ctypes.c_void_p(-1).value):
-                    _icmp_broken = True
-                else:
-                    _icmp_handle = h
-            except Exception:
+    """Ein ICMP-Handle je Thread (viele Threads pingen gleichzeitig)."""
+    global _icmp_broken
+    h = getattr(_icmp_local, "handle", None)
+    if h is None and not _icmp_broken:
+        try:
+            iphlpapi = ctypes.windll.iphlpapi  # type: ignore[attr-defined]
+            iphlpapi.IcmpCreateFile.restype = ctypes.c_void_p
+            h = iphlpapi.IcmpCreateFile()
+            if h in (None, 0, ctypes.c_void_p(-1).value):
                 _icmp_broken = True
-        return _icmp_handle
+                h = None
+            else:
+                _icmp_local.handle = h
+        except Exception:
+            _icmp_broken = True
+            h = None
+    return h
 
 
 class _ICMP_ECHO_REPLY(ctypes.Structure):
@@ -153,6 +155,14 @@ def ping(ip: str, timeout_ms: int = 600, allow_tcp: bool = True) -> tuple[bool, 
         return _cli_ping(ip, timeout_ms)
     except OSError:
         pass
+    try:
+        reached, _addr, rtt = _linux_ttl_probe(ip, 64, timeout_ms)
+        if reached:
+            return True, rtt
+        if not allow_tcp:
+            return False, None
+    except OSError:
+        pass
     if allow_tcp:
         return tcp_probe(ip)
     return False, None
@@ -212,6 +222,8 @@ def _linux_ttl_probe(ip: str, ttl: int, timeout_ms: int) -> tuple[bool, str, flo
                 continue
             typ = icmp[0]
             if typ == 0:
+                if addr[0] != ip:
+                    continue
                 return True, addr[0], dt
             if typ == 11:
                 return False, addr[0], dt

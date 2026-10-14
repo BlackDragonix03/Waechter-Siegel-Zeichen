@@ -117,6 +117,10 @@ def analyze(scan: Scan) -> list[dict[str, str]]:
         out.append(_p(SEV_INFO, f"{len(rnd)} Geräte mit zufälliger MAC-Adresse",
                       "Moderne Smartphones nutzen pro WLAN eine Zufalls-MAC; der Hersteller ist dann nicht erkennbar und die Wiedererkennung kann sich ändern.",
                       "Im Smartphone für das Heim-WLAN die Option „private/zufällige Adresse“ abschalten, wenn eine stabile Zuordnung gewünscht ist."))
+    if scan.discovered:
+        out.append(_p(SEV_INFO, f"{len(scan.discovered)} zusätzliche Subnetze gefunden",
+                      ", ".join(scan.discovered) + ". Diese Netze sind vom eigenen Rechner aus erreichbar, obwohl sie nicht zur eigenen Schnittstelle gehören (zweiter Router, Gastnetz, VLAN, VPN, Repeater mit eigenem Netz).",
+                      "Prüfen, ob diese Netze bekannt und gewollt sind. Unbekannte Router/Geräte darin über die Weboberfläche identifizieren."))
     if not out:
         out.append(_p(SEV_OK, "Keine Probleme erkannt", "Gateway, DNS und Internet antworten, keine Auffälligkeiten.", ""))
     order = {SEV_ERROR: 0, SEV_WARN: 1, SEV_INFO: 2, SEV_OK: 3}

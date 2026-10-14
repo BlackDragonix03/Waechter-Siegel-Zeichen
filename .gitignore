@@ -5,3 +5,11 @@ desktop/dist/
 android-app/
 *.log
 release/
+# NetGuard (Python)
+netguard/.venv/
+netguard/build/
+netguard/dist/
+netguard/*.spec
+netguard/NetGuard-Daten/
+__pycache__/
+*.pyc

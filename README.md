@@ -38,14 +38,6 @@ die Dateien nicht getestet worden, nur der Ablauf ist geprüft.
 
 Lokal testen: `cd desktop && npm install && npm start` startet die Desktop-App.
 
-## NetGuard: Netzwerk-Scanner (eigenständiges Werkzeug)
-
-Im Ordner `netguard/` liegt ein eigenständiges Programm zum Scannen des Netzwerks mit zoombarer
-Topologie, Geräteliste (Name, IP, MAC, Hersteller, Ports, Router-Zugang), gespeicherten Scans
-mit Vergleich, Diagnose mit Lösungsvorschlägen sowie Live-Überwachung und Router-Abfrage.
-Windows-Exe bauen: **`build-netguard-exe.bat`** (braucht nur Python 3.10+). Details in
-`netguard/README.md`.
-
 ## Siegel entschlüsseln
 
 Im Bereich **Entschlüsseln** legst du ein Siegel ab (Datei wählen, hineinziehen oder mit Strg+V

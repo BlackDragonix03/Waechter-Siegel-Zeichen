@@ -1,4 +1,5 @@
 """Tests für die Logik ohne Netzwerk und ohne GUI. Aufruf: python -m unittest discover -s tests"""
+import json
 import os
 import sys
 import tempfile
@@ -11,6 +12,9 @@ os.environ["NETGUARD_DATA"] = tempfile.mkdtemp(prefix="netguard-test-")
 from netguard import oui, classify, storage, diagnostics  # noqa: E402
 from netguard.model import Device, Scan, InterfaceInfo, compare_scans, merge_previous_values, STATUS_NEW, STATUS_MISSING, STATUS_CHANGED, STATUS_SAME  # noqa: E402
 from netguard.net import local, discover  # noqa: E402
+from netguard.mcp.backend import HeadlessBackend  # noqa: E402
+from netguard.mcp.protocol import Session  # noqa: E402
+from netguard.mcp.tools import TOOLS, call_tool  # noqa: E402
 
 
 class OuiTests(unittest.TestCase):
@@ -153,6 +157,63 @@ class DiagnosticsTests(unittest.TestCase):
                     devices=[Device(ip="10.0.0.1", is_gateway=True, alive_via=["icmp"], latency_ms=1.0, mac="c8:0e:14:00:00:01")],
                     internet_ok=True, dns_ok=True)
         self.assertEqual(diagnostics.analyze(scan)[0]["severity"], diagnostics.SEV_OK)
+
+
+class McpTests(unittest.TestCase):
+    def setUp(self):
+        self.backend = HeadlessBackend()
+        scan = Scan(name="MCP", targets=["10.0.0.0/24"], gateways=["10.0.0.1"],
+                    interfaces=[InterfaceInfo("eth0", "10.0.0.2", "255.255.255.0", "10.0.0.1", cidr="10.0.0.0/24")],
+                    devices=[Device(ip="10.0.0.1", mac="c8:0e:14:00:00:01", is_gateway=True, device_type="router", open_ports=[80, 443]),
+                             Device(ip="10.0.0.2", mac="aa:bb:cc:00:00:02", is_self=True, device_type="self"),
+                             Device(ip="10.0.0.7", mac="aa:bb:cc:00:00:07", hostname="drucker", device_type="printer", subnet="10.0.0.0/24")],
+                    internet_ok=True, dns_ok=True)
+        self.backend.set_current_scan(scan)
+        self.session = Session(self.backend)
+
+    def test_initialize_and_list(self):
+        r = self.session.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}})
+        self.assertEqual(r["result"]["protocolVersion"], "2025-06-18")
+        self.assertIn("tools", r["result"]["capabilities"])
+        self.assertIsNone(self.session.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+        r = self.session.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        names = {t["name"] for t in r["result"]["tools"]}
+        self.assertEqual(names, {t.name for t in TOOLS})
+        for t in r["result"]["tools"]:
+            self.assertEqual(t["inputSchema"]["type"], "object")
+
+    def test_tools(self):
+        text, err = call_tool(self.backend, "get_devices", {"type": "printer"})
+        self.assertFalse(err)
+        data = json.loads(text)
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["devices"][0]["ip"], "10.0.0.7")
+        text, err = call_tool(self.backend, "get_device", {"device": "drucker"})
+        self.assertFalse(err)
+        self.assertEqual(json.loads(text)["hostname_dns"], "drucker")
+        text, err = call_tool(self.backend, "get_topology", {})
+        self.assertFalse(err)
+        topo = json.loads(text)
+        self.assertEqual(topo["root"], "dev:10.0.0.1")
+        self.assertTrue(any(e["parent"] == "dev:10.0.0.1" and e["child"] == "dev:10.0.0.7" for e in topo["edges"]))
+        text, err = call_tool(self.backend, "set_device_info", {"device": "10.0.0.7", "name": "Büro-Drucker", "trusted": True})
+        self.assertFalse(err)
+        self.assertEqual(self.backend.current_scan().device_by_ip("10.0.0.7").custom_name, "Büro-Drucker")
+        text, err = call_tool(self.backend, "get_problems", {})
+        self.assertFalse(err)
+        self.assertIn("problems", json.loads(text))
+        text, err = call_tool(self.backend, "get_device", {"device": "gibtsnicht"})
+        self.assertTrue(err)
+        text, err = call_tool(self.backend, "scan_network", {"discover": "falsch"})
+        self.assertTrue(err)
+
+    def test_rpc_errors(self):
+        r = self.session.handle({"jsonrpc": "2.0", "id": 5, "method": "unbekannt"})
+        self.assertEqual(r["error"]["code"], -32601)
+        r = self.session.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "nope"}})
+        self.assertTrue(r["result"]["isError"])
+        r = self.session.handle([{"jsonrpc": "2.0", "id": 7, "method": "ping"}, {"jsonrpc": "2.0", "method": "notifications/initialized"}])
+        self.assertEqual(len(r), 1)
 
 
 if __name__ == "__main__":

@@ -42,17 +42,17 @@ set ICON=
 if exist "build\netguard.ico" set ICON=--icon build\netguard.ico
 
 echo.
-echo [4/4] Exe bauen (eine Datei, ohne Konsolenfenster).
-"%VPY%" -m PyInstaller --noconfirm --clean --onefile --windowed --name NetGuard %ICON% ^
-    --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets ^
-    --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQml ^
-    --exclude-module PySide6.QtMultimedia --exclude-module PySide6.QtCharts --exclude-module PySide6.QtPdf ^
-    netguard.py
+set EXCL=--exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQml --exclude-module PySide6.QtMultimedia --exclude-module PySide6.QtCharts --exclude-module PySide6.QtPdf
+echo [4/4] Exe bauen (eine Datei, ohne Konsolenfenster) und NetGuard-MCP.exe (Konsole, fuer KI per Stdio).
+"%VPY%" -m PyInstaller --noconfirm --clean --onefile --windowed --name NetGuard %ICON% %EXCL% netguard.py
+if errorlevel 1 goto :build_failed
+"%VPY%" -m PyInstaller --noconfirm --onefile --console --name NetGuard-MCP %ICON% %EXCL% netguard.py
 if errorlevel 1 goto :build_failed
 
 if not exist "..\release" mkdir "..\release"
 copy /y "dist\NetGuard.exe" "..\release\NetGuard.exe" >nul
 if errorlevel 1 goto :copy_failed
+copy /y "dist\NetGuard-MCP.exe" "..\release\NetGuard-MCP.exe" >nul
 
 echo.
 echo ==============================================================
@@ -66,6 +66,7 @@ echo    eventuell eine Warnung: "Weitere Informationen", dann "Trotzdem ausfuehr
 echo  - Beim ersten Start fragt die Windows-Firewall eventuell nach Netzwerkzugriff:
 echo    fuer private Netzwerke zulassen, sonst fehlen UPnP- und Namensantworten.
 echo  - Scans und Einstellungen landen im Ordner "NetGuard-Daten" neben der Exe.
+echo  - NetGuard-MCP.exe --mcp ist der MCP-Server fuer Claude Desktop (beide Exe im selben Ordner lassen).
 echo.
 explorer "%~dp0release"
 pause

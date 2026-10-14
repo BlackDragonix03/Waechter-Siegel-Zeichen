@@ -22,6 +22,7 @@ from .history import HistoryPanel, export_scan_dialog
 from .diag import DiagnosticsPanel
 from .tools import ToolsPanel
 from .live import LivePanel
+from .mcp_panel import McpPanel
 
 
 class MainWindow(QMainWindow):
@@ -211,6 +212,14 @@ class MainWindow(QMainWindow):
         hl.addWidget(self.tools)
         self.tabs.addTab(host, "🧰  Werkzeuge")
 
+        # KI / MCP
+        self.mcp = McpPanel(self)
+        host = QWidget()
+        hl = QVBoxLayout(host)
+        hl.setContentsMargins(6, 6, 6, 6)
+        hl.addWidget(self.mcp)
+        self.tabs.addTab(host, "🤖  KI / MCP")
+
     def _build_dock(self) -> None:
         self.details = DetailsPanel()
         self.details.saved.connect(self._device_saved)
@@ -258,6 +267,7 @@ class MainWindow(QMainWindow):
         self.live.tr_user.setText(s.get("tr064_user", ""))
         self.live.tr_pass.setText(s.get("tr064_password", ""))
         self.live.snmp_comm.setText(s.get("snmp_community", "public"))
+        self.mcp.apply_settings(s)
         if s.get("geometry"):
             try:
                 from PySide6.QtCore import QByteArray
@@ -267,6 +277,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.live.shutdown()
+        self.mcp.stop()
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
             self.worker.wait(3000)
@@ -282,6 +293,7 @@ class MainWindow(QMainWindow):
             "tr064_user": self.live.tr_user.text().strip(),
             "tr064_password": self.live.tr_pass.text(),
             "snmp_community": self.live.snmp_comm.text().strip(),
+            **self.mcp.collect_settings(),
             "geometry": bytes(self.saveGeometry().toBase64()).decode(),
         })
         storage.save_settings(self.settings)
@@ -329,21 +341,27 @@ class MainWindow(QMainWindow):
         self.targets.setText("")
         self.start_scan(force_discover=True)
 
-    def start_scan(self, force_discover: bool = False) -> None:
+    def start_scan(self, force_discover: bool = False, opts: ScanOptions | None = None):
+        """Startet einen Scan. Gibt den Worker zurück (oder None, wenn nichts gestartet wurde)."""
         if self.worker is not None and self.worker.isRunning():
-            return
-        opts = self._options()
+            return None
+        external = opts is not None
+        opts = opts or self._options()
         if force_discover and opts.discover == "none":
             opts.discover = "quick"
         if not opts.targets:
             opts.targets = local.default_targets(local.interfaces())
         hosts = local.expand_targets(opts.targets)
         if not hosts and opts.discover == "none":
-            QMessageBox.warning(self, "Keine Ziele", "Bitte gültige Ziele eingeben, z.B. 192.168.178.0/24 oder 10.0.0.1-50, oder die Subnetz-Suche einschalten.")
-            return
-        if len(hosts) > 2048 and opts.discover == "none":
+            if not external:
+                QMessageBox.warning(self, "Keine Ziele", "Bitte gültige Ziele eingeben, z.B. 192.168.178.0/24 oder 10.0.0.1-50, oder die Subnetz-Suche einschalten.")
+            return None
+        if len(hosts) > 2048 and opts.discover == "none" and not external:
             if QMessageBox.question(self, "Großer Scan", f"{len(hosts)} Adressen werden geprüft. Das kann mehrere Minuten dauern. Fortfahren?") != QMessageBox.StandardButton.Yes:
-                return
+                return None
+        if external:
+            self.targets.setText(", ".join(opts.targets))
+            self.status_label.setText("Scan über MCP (KI) angefordert …")
         self._live = {}
         self.diffs = None
         self.compare_with = None
@@ -361,6 +379,7 @@ class MainWindow(QMainWindow):
         self.worker.cancelled.connect(self._on_cancelled)
         self.worker.failed.connect(self._on_failed)
         self.worker.start()
+        return self.worker
 
     def stop_scan(self) -> None:
         if self.worker is not None:
@@ -571,6 +590,10 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Laden fehlgeschlagen", str(exc))
             return
+        self.show_scan_object(scan)
+        self.tabs.setCurrentIndex(0)
+
+    def show_scan_object(self, scan: Scan) -> None:
         storage.apply_known(scan.devices, self.known)
         if not scan.problems:
             scan.problems = diagnostics.analyze(scan)
@@ -578,7 +601,6 @@ class MainWindow(QMainWindow):
         self.diffs = None
         self.compare_with = None
         self._show_scan()
-        self.tabs.setCurrentIndex(0)
         self.status_label.setText(f"Geladen: {scan.title} ({len(scan.devices)} Geräte)")
 
     def compare_saved(self, path: Path) -> None:

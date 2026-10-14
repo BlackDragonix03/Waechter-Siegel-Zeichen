@@ -38,8 +38,18 @@ jobs:
           --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQml
           --exclude-module PySide6.QtMultimedia --exclude-module PySide6.QtCharts --exclude-module PySide6.QtPdf
           netguard.py
+      - name: MCP-Konsolen-Exe bauen
+        working-directory: netguard
+        run: >
+          python -m PyInstaller --noconfirm --onefile --console --name NetGuard-MCP --icon build\netguard.ico
+          --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets
+          --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQml
+          --exclude-module PySide6.QtMultimedia --exclude-module PySide6.QtCharts --exclude-module PySide6.QtPdf
+          netguard.py
       - uses: actions/upload-artifact@v4
         with:
           name: NetGuard-Windows-exe
-          path: netguard/dist/NetGuard.exe
+          path: |
+            netguard/dist/NetGuard.exe
+            netguard/dist/NetGuard-MCP.exe
           if-no-files-found: error

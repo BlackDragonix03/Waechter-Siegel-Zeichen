@@ -31,6 +31,10 @@ und alles zeigt, was man zur Fehlersuche braucht:
   Geräteliste der Fritz!Box per TR-064 (aktiv, LAN/WLAN, Link-Geschwindigkeit, Signal), SNMP-Zähler
   pro Port für Switches/NAS/Router.
 - **Werkzeuge**: Dauer-Ping, Traceroute, Port-Check, Namensauflösung.
+- **KI / MCP**: eingebauter MCP-Server (Model Context Protocol), ein- und ausschaltbar. KI-Werkzeuge
+  wie Claude Desktop oder Claude Code können damit scannen, Geräte und Probleme abfragen, die
+  Topologie lesen, Scans vergleichen, Geräte benennen, pingen, Ports prüfen, Router und SNMP abfragen.
+  Siehe Abschnitt „KI anbinden“.
 
 ## Exe bauen (Windows)
 
@@ -54,6 +58,27 @@ python -m venv .venv
 ```
 
 Tests: `python -m unittest discover -s tests`
+
+## KI anbinden (MCP)
+
+Reiter **KI / MCP** → „MCP-Server einschalten“. Der Server läuft dann in der App unter
+`http://127.0.0.1:8765/mcp` (Streamable HTTP, JSON-RPC per POST). Scans, die die KI anstößt,
+laufen sichtbar in der Oberfläche. Im Reiter liegen fertige Konfigurationsschnipsel zum Kopieren:
+
+- **Claude Code**: `claude mcp add --transport http netguard http://127.0.0.1:8765/mcp`
+- **Claude Desktop**: startet den Server selbst per Stdio, Eintrag in `claude_desktop_config.json`:
+  `{"mcpServers": {"netguard": {"command": "C:\\Pfad\\NetGuard-MCP.exe", "args": ["--mcp"]}}}`.
+  `NetGuard-MCP.exe` ist die Konsolenvariante (wird mitgebaut, muss neben `NetGuard.exe` liegen).
+  Scans laufen dann unsichtbar im Hintergrund und landen trotzdem im Verlauf.
+- Ohne Oberfläche per HTTP: `NetGuard-MCP.exe --mcp-http 8765 --token GEHEIM` (`--lan` für 0.0.0.0).
+
+Sicherheit: Standardmäßig nur von diesem Rechner erreichbar (127.0.0.1). Mit Token (Bearer) kann
+der Server auch im LAN freigegeben werden. Fremde Origins werden abgewiesen (DNS-Rebinding-Schutz).
+
+Tools: `scan_network`, `get_current_scan`, `get_devices`, `get_device`, `get_problems`,
+`get_topology`, `list_scans`, `load_scan`, `compare_scans`, `set_device_info`, `ping`,
+`traceroute`, `port_check`, `resolve_name`, `network_info`, `router_wan_status`,
+`router_hosts`, `snmp_interfaces`.
 
 ## Hinweise
 

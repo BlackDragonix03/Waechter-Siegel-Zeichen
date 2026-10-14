@@ -14,7 +14,8 @@ from netguard.model import Device, Scan, InterfaceInfo, compare_scans, merge_pre
 from netguard.net import local, discover  # noqa: E402
 from netguard.mcp.backend import HeadlessBackend  # noqa: E402
 from netguard.mcp.protocol import Session  # noqa: E402
-from netguard.mcp.tools import TOOLS, call_tool  # noqa: E402
+from netguard.mcp.tools import TOOLS, call_tool, tool_descriptions  # noqa: E402
+from netguard.ai import ollama  # noqa: E402
 
 
 class OuiTests(unittest.TestCase):
@@ -214,6 +215,53 @@ class McpTests(unittest.TestCase):
         self.assertTrue(r["result"]["isError"])
         r = self.session.handle([{"jsonrpc": "2.0", "id": 7, "method": "ping"}, {"jsonrpc": "2.0", "method": "notifications/initialized"}])
         self.assertEqual(len(r), 1)
+
+
+class OllamaTests(unittest.TestCase):
+    def test_tools_conversion(self):
+        t = ollama.tools_for_ollama(tool_descriptions())
+        self.assertEqual(len(t), len(TOOLS))
+        self.assertEqual(t[0]["type"], "function")
+        self.assertIn("parameters", t[0]["function"])
+
+    def test_chat_loop(self):
+        import http.server
+        import threading
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if any(m.get("role") == "tool" for m in body["messages"]):
+                    out = {"message": {"role": "assistant", "content": "Antwort: " + body["messages"][-1]["content"]}}
+                else:
+                    out = {"message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "echo", "arguments": {"x": 1}}}]}}
+                b = json.dumps(out).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            msgs = [{"role": "user", "content": "hi"}]
+            events = []
+            text = ollama.chat(msgs, "m", [{"type": "function", "function": {"name": "echo", "parameters": {}}}],
+                               lambda n, a: (f"{n}:{a['x']}", False), f"http://127.0.0.1:{srv.server_port}",
+                               on_event=lambda a, t: events.append(a))
+            self.assertEqual(text, "Antwort: echo:1")
+            self.assertEqual([m["role"] for m in msgs], ["user", "assistant", "tool", "assistant"])
+            self.assertEqual(events, ["tool", "result", "text"])
+        finally:
+            srv.shutdown()
+
+    def test_unavailable(self):
+        ok, msg = ollama.available("http://127.0.0.1:1")
+        self.assertFalse(ok)
+        self.assertIn("Ollama", msg)
 
 
 if __name__ == "__main__":

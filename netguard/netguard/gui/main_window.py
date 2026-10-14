@@ -23,6 +23,7 @@ from .diag import DiagnosticsPanel
 from .tools import ToolsPanel
 from .live import LivePanel
 from .mcp_panel import McpPanel
+from .settings_dialog import SettingsDialog
 
 
 class MainWindow(QMainWindow):
@@ -129,6 +130,9 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         tb.addWidget(spacer)
+        self.btn_settings = QPushButton("⚙ Einstellungen")
+        self.btn_settings.clicked.connect(self.open_settings)
+        tb.addWidget(self.btn_settings)
         self.version_label = QLabel(f"{APP_NAME} {__version__}")
         self.version_label.setObjectName("dim")
         tb.addWidget(self.version_label)
@@ -212,13 +216,13 @@ class MainWindow(QMainWindow):
         hl.addWidget(self.tools)
         self.tabs.addTab(host, "🧰  Werkzeuge")
 
-        # KI / MCP
+        # KI / MCP (Reiter kann in den Einstellungen ausgeblendet werden)
         self.mcp = McpPanel(self)
-        host = QWidget()
-        hl = QVBoxLayout(host)
+        self.mcp_host = QWidget()
+        hl = QVBoxLayout(self.mcp_host)
         hl.setContentsMargins(6, 6, 6, 6)
         hl.addWidget(self.mcp)
-        self.tabs.addTab(host, "🤖  KI / MCP")
+        self.tabs.addTab(self.mcp_host, "🤖  KI / MCP")
 
     def _build_dock(self) -> None:
         self.details = DetailsPanel()
@@ -268,6 +272,7 @@ class MainWindow(QMainWindow):
         self.live.tr_pass.setText(s.get("tr064_password", ""))
         self.live.snmp_comm.setText(s.get("snmp_community", "public"))
         self.mcp.apply_settings(s)
+        self._set_ai_tab_visible(bool(s.get("show_ai_tab", True)))
         if s.get("geometry"):
             try:
                 from PySide6.QtCore import QByteArray
@@ -294,10 +299,30 @@ class MainWindow(QMainWindow):
             "tr064_password": self.live.tr_pass.text(),
             "snmp_community": self.live.snmp_comm.text().strip(),
             **self.mcp.collect_settings(),
+            "show_ai_tab": self.tabs.indexOf(self.mcp_host) >= 0,
+            "local_ai": self.mcp.local_ai_enabled,
             "geometry": bytes(self.saveGeometry().toBase64()).decode(),
         })
         storage.save_settings(self.settings)
         super().closeEvent(event)
+
+    def _set_ai_tab_visible(self, visible: bool) -> None:
+        idx = self.tabs.indexOf(self.mcp_host)
+        if visible and idx < 0:
+            self.tabs.addTab(self.mcp_host, "🤖  KI / MCP")
+        elif not visible and idx >= 0:
+            self.tabs.removeTab(idx)
+        self.settings["show_ai_tab"] = visible
+
+    def open_settings(self) -> None:
+        dlg = SettingsDialog(self.settings, self)
+        if dlg.exec() != SettingsDialog.DialogCode.Accepted:
+            return
+        v = dlg.values()
+        self.settings.update(v)
+        self._set_ai_tab_visible(v["show_ai_tab"])
+        self.mcp.set_local_ai(v["local_ai"], self.settings)
+        storage.save_settings(self.settings)
 
     def _detect_targets_if_empty(self) -> None:
         if not self.targets.text().strip():

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
 from ..mcp.gui_backend import GuiBackend
 from ..mcp.http_server import McpHttpServer
 from ..mcp.tools import TOOLS
+from .ai_panel import AiPanel
 from . import theme
 
 
@@ -26,8 +27,14 @@ class McpPanel(QWidget):
         self.backend.logged.connect(self._log)
         self.server: McpHttpServer | None = None
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.inner_tabs = QTabWidget()
+        outer.addWidget(self.inner_tabs)
+        mcp_page = QWidget()
+        lay = QVBoxLayout(mcp_page)
+        lay.setContentsMargins(8, 8, 8, 8)
+        self.inner_tabs.addTab(mcp_page, "MCP-Server (Claude Desktop, Claude Code …)")
         intro = QLabel("Der MCP-Server (Model Context Protocol) macht NetGuard für KI-Werkzeuge wie Claude Desktop, Claude Code oder "
                        "andere MCP-Clients nutzbar: Die KI kann scannen, Geräte abfragen, Probleme analysieren, pingen, den Router abfragen. "
                        "Scans, die die KI anstößt, laufen sichtbar hier in der Oberfläche.")
@@ -94,6 +101,10 @@ class McpPanel(QWidget):
         self.log.setReadOnly(True)
         self.log.setStyleSheet(f"font-family: Consolas, 'Cascadia Mono', monospace; font-size: 9.5pt; background: {theme.BG2};")
         lay.addWidget(self.log, 1)
+
+        # Lokale KI: eigener Unterreiter, nur vorhanden wenn eingeschaltet
+        self.ai_page: QWidget | None = None
+        self.ai_panel: AiPanel | None = None
 
     def _snippet_tab(self, title: str) -> QPlainTextEdit:
         host = QWidget()
@@ -186,6 +197,30 @@ class McpPanel(QWidget):
     def _log(self, text: str) -> None:
         self.log.appendPlainText(f"{time.strftime('%H:%M:%S')}  {text}")
 
+    @property
+    def local_ai_enabled(self) -> bool:
+        return self.ai_page is not None and self.inner_tabs.indexOf(self.ai_page) >= 0
+
+    def set_local_ai(self, enabled: bool, settings: dict | None = None) -> None:
+        if enabled:
+            if self.ai_panel is None:
+                self.ai_panel = AiPanel(self.backend)
+                self.ai_page = QWidget()
+                pl = QVBoxLayout(self.ai_page)
+                pl.setContentsMargins(8, 8, 8, 8)
+                pl.addWidget(self.ai_panel)
+                if settings:
+                    self.ai_panel.apply_settings(settings)
+            if self.inner_tabs.indexOf(self.ai_page) < 0:
+                self.inner_tabs.addTab(self.ai_page, "Lokale KI (Ollama)")
+                self.ai_panel.refresh()
+        elif self.ai_page is not None:
+            idx = self.inner_tabs.indexOf(self.ai_page)
+            if idx >= 0:
+                self.inner_tabs.removeTab(idx)
+            if self.ai_panel is not None:
+                self.ai_panel.stop()
+
     # ---- Einstellungen --------------------------------------------------------
     def apply_settings(self, s: dict) -> None:
         self.port.setValue(int(s.get("mcp_port", 8765) or 8765))
@@ -193,9 +228,13 @@ class McpPanel(QWidget):
         self.lan.setChecked(bool(s.get("mcp_lan", False)))
         self.autostart.setChecked(bool(s.get("mcp_autostart", False)))
         self._update_snippets()
+        self.set_local_ai(bool(s.get("local_ai", False)), s)
         if self.autostart.isChecked():
             self.start()
 
     def collect_settings(self) -> dict:
-        return {"mcp_port": self.port.value(), "mcp_token": self.token.text().strip(), "mcp_lan": self.lan.isChecked(),
-                "mcp_autostart": self.autostart.isChecked()}
+        out = {"mcp_port": self.port.value(), "mcp_token": self.token.text().strip(), "mcp_lan": self.lan.isChecked(),
+               "mcp_autostart": self.autostart.isChecked()}
+        if self.ai_panel is not None:
+            out.update(self.ai_panel.collect_settings())
+        return out

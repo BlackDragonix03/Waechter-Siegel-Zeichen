@@ -80,6 +80,18 @@ Tools: `scan_network`, `get_current_scan`, `get_devices`, `get_device`, `get_pro
 `traceroute`, `port_check`, `resolve_name`, `network_info`, `router_wan_status`,
 `router_hosts`, `snmp_interfaces`.
 
+## Lokale KI (optional)
+
+In **⚙ Einstellungen** lässt sich „Lokale KI (Ollama) einschalten“ aktivieren; dann erscheint im
+KI-Reiter der Unterreiter **Lokale KI** mit Modellwahl (0,5B bis 4B, Größe und Eignung angegeben),
+Download-Knopf mit Fortschritt und einem Chat, der dieselben Werkzeuge wie der MCP-Server nutzt.
+Ausgeschaltet ist davon nichts sichtbar; der ganze KI-Reiter lässt sich ebenfalls ausblenden.
+
+Die Modelle laufen über [Ollama](https://ollama.com) (kostenlos, läuft lokal, einmal installieren).
+NetGuard selbst bleibt dadurch schlank. Empfehlung: Qwen 2.5 3B (1,9 GB) oder Llama 3.2 3B; die
+0,5B/1B-Modelle sind für Netzwerkfragen zu schwach. Auf einem PC ohne Grafikkarte antworten
+3B-Modelle mit etwa 5 bis 15 Wörtern pro Sekunde.
+
 ## Hinweise
 
 - Kein Admin nötig. Windows-Firewall beim ersten Start für private Netze zulassen, sonst fehlen
